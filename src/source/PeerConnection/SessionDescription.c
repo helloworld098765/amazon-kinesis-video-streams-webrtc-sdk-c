@@ -125,6 +125,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置payloadType
 /*
  * Populate map with PayloadTypes if we are offering
  */
@@ -143,6 +144,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置
 /*
  * Populate map with PayloadTypes for codecs a KvsPeerConnection has enabled.
  */
@@ -266,6 +268,8 @@ CleanUp:
     return retStatus;
 }
 
+
+// 设置收发器payloadType
 STATUS setTransceiverPayloadTypes(PHashTable codecTable, PHashTable rtxTable, PDoubleList pTransceivers)
 {
     ENTERS();
@@ -289,6 +293,7 @@ STATUS setTransceiverPayloadTypes(PHashTable codecTable, PHashTable rtxTable, PD
             pKvsRtpTransceiver->sender.payloadType = (UINT8) data;
             pKvsRtpTransceiver->sender.rtxPayloadType = (UINT8) data;
 
+            // rtx重传payloadType
             // NACKs may have distinct PayloadTypes, look in the rtxTable and check. Otherwise NACKs will just be re-sending the same seqnum
             if (hashTableGet(rtxTable, pKvsRtpTransceiver->sender.track.codec, &data) == STATUS_SUCCESS) {
                 pKvsRtpTransceiver->sender.rtxPayloadType = (UINT8) data;

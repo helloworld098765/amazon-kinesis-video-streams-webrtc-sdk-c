@@ -1,6 +1,7 @@
 #define LOG_CLASS "SDP"
 #include "../Include_i.h"
 
+// 解析MediaName字符串 加入pSessionDescription
 STATUS parseMediaName(PSessionDescription pSessionDescription, PCHAR pch, UINT32 lineLen)
 {
     ENTERS();
@@ -16,6 +17,7 @@ CleanUp:
     return retStatus;
 }
 
+// 解析Session属性字符串 加入pSessionDescription
 STATUS parseSessionAttributes(PSessionDescription pSessionDescription, PCHAR pch, UINT32 lineLen)
 {
     ENTERS();
@@ -42,6 +44,7 @@ CleanUp:
     return retStatus;
 }
 
+// 解析媒体属性字符串，加入pSessionDescription
 STATUS parseMediaAttributes(PSessionDescription pSessionDescription, PCHAR pch, UINT32 lineLen)
 {
     ENTERS();
@@ -70,6 +73,7 @@ CleanUp:
     return retStatus;
 }
 
+// 反序列化会话描述
 STATUS deserializeSessionDescription(PSessionDescription pSessionDescription, PCHAR sdpBytes)
 {
     ENTERS();

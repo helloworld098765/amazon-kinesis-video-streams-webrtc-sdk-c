@@ -136,6 +136,8 @@ typedef struct {
     CHAR attributeValue[MAX_SDP_ATTRIBUTE_VALUE_LENGTH + 1];
 } SdpAttributes, *PSdpAttributes;
 
+
+// 媒体描述
 typedef struct {
     // m=<media> <port>/<number of ports> <proto> <fmt> ...
     // https://tools.ietf.org/html/rfc4566#section-5.14
@@ -158,6 +160,7 @@ typedef struct {
     UINT8 mediaBandwidthCount;
 } SdpMediaDescription, *PSdpMediaDescription;
 
+// 会话描述
 typedef struct {
     // https://tools.ietf.org/html/rfc4566#section-5.1
     UINT64 version;

@@ -1,6 +1,7 @@
 #define LOG_CLASS "Stun"
 #include "../Include_i.h"
 
+// 将IpAddr 写入pBuffer
 STATUS stunPackageIpAddr(PStunHeader pStunHeader, STUN_ATTRIBUTE_TYPE type, PKvsIpAddress pAddress, PBYTE pBuffer, PUINT32 pDataLen)
 {
     ENTERS();
@@ -67,6 +68,7 @@ CleanUp:
     return retStatus;
 }
 
+// 序列化Stun Packet
 STATUS serializeStunPacket(PStunPacket pStunPacket, PBYTE password, UINT32 passwordLen, BOOL generateMessageIntegrity, BOOL generateFingerprint,
                            PBYTE pBuffer, PUINT32 pSize)
 {
@@ -514,6 +516,7 @@ CleanUp:
     return retStatus;
 }
 
+// 反序列化Stun Packet
 STATUS deserializeStunPacket(PBYTE pStunBuffer, UINT32 bufferSize, PBYTE password, UINT32 passwordLen, PStunPacket* ppStunPacket)
 {
     ENTERS();
@@ -1061,6 +1064,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收Stun Packet资源
 STATUS freeStunPacket(PStunPacket* ppStunPacket)
 {
     ENTERS();
@@ -1076,6 +1080,7 @@ CleanUp:
     return retStatus;
 }
 
+// 创建Stun Packet
 STATUS createStunPacket(STUN_PACKET_TYPE stunPacketType, PBYTE transactionId, PStunPacket* ppStunPacket)
 {
     ENTERS();
@@ -1084,12 +1089,15 @@ STATUS createStunPacket(STUN_PACKET_TYPE stunPacketType, PBYTE transactionId, PS
     PStunPacket pStunPacket = NULL;
 
     CHK(ppStunPacket != NULL, STATUS_NULL_ARG);
+    // 分配2048字节
     CHK(NULL != (pStunPacket = (PStunPacket) MEMCALLOC(1, STUN_PACKET_ALLOCATION_SIZE)), STATUS_NOT_ENOUGH_MEMORY);
+    // 设置1-8字节
     pStunPacket->attributesCount = 0;
     pStunPacket->header.messageLength = 0;
     pStunPacket->header.magicCookie = STUN_HEADER_MAGIC_COOKIE;
     pStunPacket->header.stunMessageType = stunPacketType;
 
+    // 设置事务id (9-20字节)
     // Generate the transaction id if none is specified
     if (transactionId == NULL) {
         for (i = 0; i < STUN_TRANSACTION_ID_LEN; i++) {
@@ -1099,6 +1107,7 @@ STATUS createStunPacket(STUN_PACKET_TYPE stunPacketType, PBYTE transactionId, PS
         MEMCPY(pStunPacket->header.transactionId, transactionId, STUN_TRANSACTION_ID_LEN);
     }
 
+    // 将attributeList 指向pStunPacket + sizeof(StunPacket)
     // Set the address - calloc should have NULL-ified the actual pointers
     pStunPacket->attributeList = (PStunAttributeHeader*) (pStunPacket + 1);
 
@@ -1121,6 +1130,7 @@ CleanUp:
     return retStatus;
 }
 
+// 追加StunAddress属性
 STATUS appendStunAddressAttribute(PStunPacket pStunPacket, STUN_ATTRIBUTE_TYPE addressAttributeType, PKvsIpAddress pAddress)
 {
     ENTERS();
@@ -1199,6 +1209,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取指定类型的属性
 STATUS getStunAttribute(PStunPacket pStunPacket, STUN_ATTRIBUTE_TYPE attributeType, PStunAttributeHeader* ppStunAttribute)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1222,6 +1233,7 @@ CleanUp:
     return retStatus;
 }
 
+// 异或IP
 STATUS xorIpAddress(PKvsIpAddress pAddress, PBYTE pTransactionId)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1232,13 +1244,16 @@ STATUS xorIpAddress(PKvsIpAddress pAddress, PBYTE pTransactionId)
     CHK(pAddress != NULL, STATUS_NULL_ARG);
     CHK(IS_IPV4_ADDR(pAddress) || pTransactionId != NULL, STATUS_INVALID_ARG);
 
+    // port 与STUN_HEADER_MAGIC_COOKIE 前16位异或
     // Perform the XOR-ing
     pAddress->port = (UINT16) (getInt16(STUN_HEADER_MAGIC_COOKIE >> 16)) ^ pAddress->port;
 
+    // ip前四位与STUN_HEADER_MAGIC_COOKIE异或
     data = (UINT32) getInt32(*(PINT32) pAddress->address);
     data ^= STUN_HEADER_MAGIC_COOKIE;
     putInt32((PINT32) pAddress->address, data);
 
+    // ipv6 后12位与事务id异或
     if (pAddress->family == KVS_IP_FAMILY_TYPE_IPV6) {
         // Process the rest of 12 bytes
         pData = &pAddress->address[SIZEOF(UINT32)];
@@ -1494,6 +1509,7 @@ CleanUp:
     return retStatus;
 }
 
+// 更新Stun Nonce 属性
 STATUS updateStunNonceAttribute(PStunPacket pStunPacket, PBYTE nonce, UINT16 nonceLen)
 {
     ENTERS();
@@ -1676,6 +1692,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取指定属性的占用内存的大小(返回值8*n个字节,朝上补齐)
 UINT16 getPackagedStunAttributeSize(PStunAttributeHeader pStunAttributeHeader)
 {
     UINT16 length;
@@ -1735,6 +1752,7 @@ UINT16 getPackagedStunAttributeSize(PStunAttributeHeader pStunAttributeHeader)
     return (UINT16) ROUND_UP(length, 8);
 }
 
+// 获取指定StunPacket 第一个有效属性地址
 STATUS getFirstAvailableStunAttribute(PStunPacket pStunPacket, PStunAttributeHeader* ppStunAttribute)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1754,9 +1772,11 @@ STATUS getFirstAvailableStunAttribute(PStunPacket pStunPacket, PStunAttributeHea
         // Calculate the first available address
         pAttribute = (PStunAttributeHeader) (((PBYTE) pAttribute) + getPackagedStunAttributeSize(pAttribute));
 
+        // 验证2048个字节是否用完
         // Validate we are still within the allocation
         CHK((PBYTE) pStunPacket + pStunPacket->allocationSize > (PBYTE) pAttribute, STATUS_NOT_ENOUGH_MEMORY);
     } else {
+        // 预留20 个指针位置(PStunAttributeHeader*)
         // Set the attribute to the first one
         pAttribute = (PStunAttributeHeader) (pStunPacket->attributeList + STUN_ATTRIBUTE_MAX_COUNT);
     }

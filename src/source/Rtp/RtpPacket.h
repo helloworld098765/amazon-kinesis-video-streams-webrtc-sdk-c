@@ -12,26 +12,29 @@ extern "C" {
 
 #define MIN_HEADER_LENGTH 12
 #define VERSION_SHIFT     6
-#define VERSION_MASK      0x3
+#define VERSION_MASK      0x3   // 0000 0011 --> 1100 0000 2bit  --> V(版本号)
 #define PADDING_SHIFT     5
-#define PADDING_MASK      0x1
+#define PADDING_MASK      0x1   // 0000 0001 --> 0010 0000 1bit  --> P(是否有填充数据)
 #define EXTENSION_SHIFT   4
-#define EXTENSION_MASK    0x1
-#define CSRC_COUNT_MASK   0xF
+#define EXTENSION_MASK    0x1   // 0000 0001 --> 0001 0000 1bit  --> X(是否具有拓展头)
+#define CSRC_COUNT_MASK   0xF   // 0000 1111 4bit CC CSRC数量
 #define MARKER_SHIFT      7
-#define MARKER_MASK       0x1
-#define PAYLOAD_TYPE_MASK 0x7F
-#define SEQ_NUMBER_OFFSET 2
-#define TIMESTAMP_OFFSET  4
-#define SSRC_OFFSET       8
+#define MARKER_MASK       0x1   // 0000 0001 --> 1000 0000 1bit  --> M
+#define PAYLOAD_TYPE_MASK 0x7F  // 0111 1111 --> PT 7bit
+#define SEQ_NUMBER_OFFSET 2     // 序列号(3-4字节) 2个字节
+#define TIMESTAMP_OFFSET  4     // 时间戳(5-8字节) 4个字节
+#define SSRC_OFFSET       8     // SSRC(9-12字节) 4个字节
 #define CSRC_OFFSET       12
 #define CSRC_LENGTH       4
 
+// 获取RTP头长度
 #define RTP_HEADER_LEN(pRtpPacket)                                                                                                                   \
     (12 + (pRtpPacket)->header.csrcCount * CSRC_LENGTH + ((pRtpPacket)->header.extension ? 4 + (pRtpPacket)->header.extensionLength : 0))
 
+// 获取RTP包长度 (头 + 负载)
 #define RTP_GET_RAW_PACKET_SIZE(pRtpPacket) (RTP_HEADER_LEN(pRtpPacket) + ((pRtpPacket)->payloadLength))
 
+// 获取RTP包序列号
 #define GET_UINT16_SEQ_NUM(seqIndex) ((UINT16) ((seqIndex) % (MAX_UINT16 + 1)))
 
 /*
@@ -45,7 +48,7 @@ extern "C" {
      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  */
 // https://tools.ietf.org/html/draft-holmer-rmcat-transport-wide-cc-extensions-01
-#define TWCC_EXT_PROFILE                 0xBEDE
+#define TWCC_EXT_PROFILE                 0xBEDE // 1字节header
 #define TWCC_PAYLOAD(extId, sequenceNum) htonl((((extId) &0xfu) << 28u) | (1u << 24u) | ((UINT32) (sequenceNum) << 8u))
 #define TWCC_SEQNUM(extPayload)          ((UINT16) getUnalignedInt16BigEndian(extPayload + 1))
 
@@ -66,6 +69,7 @@ typedef STATUS (*DepayRtpPayloadFunc)(PBYTE, UINT32, PBYTE, PUINT32, PBOOL);
  * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  */
 
+// RTP 头
 struct __RtpPacketHeader {
     UINT8 version;
     BOOL padding;
@@ -84,6 +88,7 @@ struct __RtpPacketHeader {
 typedef struct __RtpPacketHeader RtpPacketHeader;
 typedef RtpPacketHeader* PRtpPacketHeader;
 
+// RTP 负载
 struct __Payloads {
     PBYTE payloadBuffer;
     UINT32 payloadLength;
@@ -95,6 +100,7 @@ struct __Payloads {
 typedef struct __Payloads PayloadArray;
 typedef PayloadArray* PPayloadArray;
 
+// RTP包
 typedef struct __RtpPacket RtpPacket;
 struct __RtpPacket {
     RtpPacketHeader header;

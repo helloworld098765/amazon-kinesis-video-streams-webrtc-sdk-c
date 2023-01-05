@@ -36,7 +36,7 @@ extern "C" {
 #define STUN_ATTRIBUTE_HEADER_DATA_LEN (UINT16) 2
 #define STUN_ATTRIBUTE_HEADER_LEN      (UINT16)(STUN_ATTRIBUTE_HEADER_TYPE_LEN + STUN_ATTRIBUTE_HEADER_DATA_LEN)
 
-#define STUN_ATTRIBUTE_ADDRESS_FAMILY_LEN (UINT16) 2
+#define STUN_ATTRIBUTE_ADDRESS_FAMILY_LEN (UINT16) 2    // ipv4-->0x01 ipv6--->0x02 (高8位置0)
 #define STUN_ATTRIBUTE_ADDRESS_PORT_LEN   (UINT16) 2
 #define STUN_ATTRIBUTE_ADDRESS_HEADER_LEN (UINT16)(STUN_ATTRIBUTE_ADDRESS_FAMILY_LEN + STUN_ATTRIBUTE_ADDRESS_PORT_LEN)
 
@@ -133,6 +133,7 @@ extern "C" {
     putInt16((PINT16) (pBuf), (UINT16) (type));                                                                                                      \
     putInt16((PINT16) ((pBuf) + STUN_ATTRIBUTE_HEADER_TYPE_LEN), (UINT16) (dataLen));
 
+// STUN 包类型， 1-2字节
 /**
  * STUN packet types
  */
@@ -181,6 +182,7 @@ typedef enum {
     STUN_ERROR_STALE_NONCE = (UINT16) 438,
 } STUN_ERROR_CODE;
 
+// 属性类型定义
 /**
  * STUN attribute types
  */
@@ -227,12 +229,17 @@ typedef enum {
  *
  */
 typedef struct {
+    // 最高2位 为0
     UINT16 stunMessageType;
+    // 消息长度
     UINT16 messageLength;
+    // 固定值0x2112A442，用于反射地址的异或（XOR）运算
     UINT32 magicCookie;
+    // 事务id 12字节
     BYTE transactionId[STUN_TRANSACTION_ID_LEN];
 } StunHeader, *PStunHeader;
 
+// 属性头 4字节对齐
 typedef struct {
     // Type of the STUN attribute
     UINT16 type;
@@ -246,6 +253,7 @@ typedef struct {
     KvsIpAddress address;
 } StunAttributeAddress, *PStunAttributeAddress;
 
+// 属性username 用于验证消息完整性
 typedef struct {
     // Encapsulating the attribute header
     StunAttributeHeader attribute;
@@ -258,11 +266,13 @@ typedef struct {
     PCHAR userName;
 } StunAttributeUsername, *PStunAttributeUsername;
 
+// 属性fingerprint 指纹认证
 typedef struct {
     StunAttributeHeader attribute;
     UINT32 crc32Fingerprint;
 } StunAttributeFingerprint, *PStunAttributeFingerprint;
 
+// 属性 优先级
 typedef struct {
     StunAttributeHeader attribute;
     UINT32 priority;
@@ -356,16 +366,16 @@ typedef struct {
  */
 typedef struct {
     // Stun header
-    StunHeader header;
+    StunHeader header;  // 20字节
 
     // Number of attributes in the list
-    UINT32 attributesCount;
+    UINT32 attributesCount; // 4字节
 
     // The entire structure allocation size
-    UINT32 allocationSize;
+    UINT32 allocationSize;  // 4字节
 
     // Stun attributes
-    PStunAttributeHeader* attributeList;
+    PStunAttributeHeader* attributeList; // 8字节(64位)
 } StunPacket, *PStunPacket;
 
 STATUS serializeStunPacket(PStunPacket, PBYTE, UINT32, BOOL, BOOL, PBYTE, PUINT32);

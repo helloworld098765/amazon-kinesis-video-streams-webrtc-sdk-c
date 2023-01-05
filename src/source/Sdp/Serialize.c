@@ -1,6 +1,7 @@
 #define LOG_CLASS "SDP"
 #include "../Include_i.h"
 
+// 序列化版本 v=
 STATUS serializeVersion(UINT64 version, PCHAR* ppOutputData, PUINT32 pTotalWritten, PUINT32 pBufferSize)
 {
     ENTERS();
@@ -22,6 +23,7 @@ CleanUp:
     return retStatus;
 }
 
+// 序列化Oringin o=
 STATUS serializeOrigin(PSdpOrigin pSDPOrigin, PCHAR* ppOutputData, PUINT32 pTotalWritten, PUINT32 pBufferSize)
 {
     ENTERS();
@@ -50,6 +52,7 @@ CleanUp:
     return retStatus;
 }
 
+// 序列化SessionName s=
 STATUS serializeSessionName(PCHAR sessionName, PCHAR* ppOutputData, PUINT32 pTotalWritten, PUINT32 pBufferSize)
 {
     ENTERS();
@@ -73,6 +76,7 @@ CleanUp:
     return retStatus;
 }
 
+// 序列化TimeDescription t=
 STATUS serializeTimeDescription(PSdpTimeDescription pSDPTimeDescription, PCHAR* ppOutputData, PUINT32 pTotalWritten, PUINT32 pBufferSize)
 {
     ENTERS();
@@ -92,6 +96,7 @@ STATUS serializeTimeDescription(PSdpTimeDescription pSDPTimeDescription, PCHAR* 
     return retStatus;
 }
 
+// 序列化属性 a=
 STATUS serializeAttribute(PSdpAttributes pSDPAttributes, PCHAR* ppOutputData, PUINT32 pTotalWritten, PUINT32 pBufferSize)
 {
     ENTERS();
@@ -115,6 +120,7 @@ STATUS serializeAttribute(PSdpAttributes pSDPAttributes, PCHAR* ppOutputData, PU
     return retStatus;
 }
 
+// 序列化媒体 m=
 STATUS serializeMediaName(PCHAR pMediaName, PCHAR* ppOutputData, PUINT32 pTotalWritten, PUINT32 pBufferSize)
 {
     ENTERS();
@@ -138,6 +144,7 @@ CleanUp:
     return retStatus;
 }
 
+// 序列化媒体连接信息 c=
 STATUS serializeMediaConnectionInformation(PSdpConnectionInformation pSdpConnectionInformation, PCHAR* ppOutputData, PUINT32 pTotalWritten,
                                            PUINT32 pBufferSize)
 {
@@ -163,6 +170,7 @@ CleanUp:
     return retStatus;
 }
 
+// 序列化会话描述
 STATUS serializeSessionDescription(PSessionDescription pSessionDescription, PCHAR sdpBytes, PUINT32 sdpBytesLength)
 {
     ENTERS();

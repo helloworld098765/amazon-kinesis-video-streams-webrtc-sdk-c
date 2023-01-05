@@ -2,6 +2,7 @@
 
 #include "../Include_i.h"
 
+// 构建RTP 包
 STATUS createRtpPacket(UINT8 version, BOOL padding, BOOL extension, UINT8 csrcCount, BOOL marker, UINT8 payloadType, UINT16 sequenceNumber,
                        UINT32 timestamp, UINT32 ssrc, PUINT32 csrcArray, UINT16 extensionProfile, UINT32 extensionLength, PBYTE extensionPayload,
                        PBYTE payload, UINT32 payloadLength, PRtpPacket* ppRtpPacket)
@@ -28,6 +29,7 @@ CleanUp:
     return retStatus;
 }
 
+// 填充RTP包
 STATUS setRtpPacket(UINT8 version, BOOL padding, BOOL extension, UINT8 csrcCount, BOOL marker, UINT8 payloadType, UINT16 sequenceNumber,
                     UINT32 timestamp, UINT32 ssrc, PUINT32 csrcArray, UINT16 extensionProfile, UINT32 extensionLength, PBYTE extensionPayload,
                     PBYTE payload, UINT32 payloadLength, PRtpPacket pRtpPacket)
@@ -63,6 +65,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收RTP包内存
 STATUS freeRtpPacket(PRtpPacket* ppRtpPacket)
 {
     ENTERS();
@@ -84,6 +87,7 @@ CleanUp:
     return retStatus;
 }
 
+// 从字节序列构造RTP包
 STATUS createRtpPacketFromBytes(PBYTE rawPacket, UINT32 packetLength, PRtpPacket* ppRtpPacket)
 {
     ENTERS();
@@ -113,6 +117,7 @@ CleanUp:
     return retStatus;
 }
 
+// 构建重传RTP包
 STATUS constructRetransmitRtpPacketFromBytes(PBYTE rawPacket, UINT32 packetLength, UINT16 sequenceNum, UINT8 payloadType, UINT32 ssrc,
                                              PRtpPacket* ppRtpPacket)
 {
@@ -157,6 +162,7 @@ CleanUp:
     return retStatus;
 }
 
+// 从字节序列获取数据构建RTP包
 STATUS setRtpPacketFromBytes(PBYTE rawPacket, UINT32 packetLength, PRtpPacket pRtpPacket)
 {
     ENTERS();
@@ -213,6 +219,8 @@ CleanUp:
     return retStatus;
 }
 
+
+// 从RtpPacket 提取数据 创建字节序列
 STATUS createBytesFromRtpPacket(PRtpPacket pRtpPacket, PBYTE pRawPacket, PUINT32 pPacketLength)
 {
     ENTERS();
@@ -241,6 +249,7 @@ CleanUp:
     return retStatus;
 }
 
+// 从RtpPacket中提取数据，设置字节序列
 STATUS setBytesFromRtpPacket(PRtpPacket pRtpPacket, PBYTE pRawPacket, UINT32 packetLength)
 {
     ENTERS();
@@ -253,6 +262,7 @@ STATUS setBytesFromRtpPacket(PRtpPacket pRtpPacket, PBYTE pRawPacket, UINT32 pac
     CHK(pRtpPacket != NULL && pRawPacket != NULL, STATUS_NULL_ARG);
 
     packetLengthNeeded = RTP_GET_RAW_PACKET_SIZE(pRtpPacket);
+    // 检查buffer是否够用
     CHK(packetLength >= packetLengthNeeded, STATUS_BUFFER_TOO_SMALL);
     /*
      *  0                   1                   2                   3
@@ -270,17 +280,22 @@ STATUS setBytesFromRtpPacket(PRtpPacket pRtpPacket, PBYTE pRawPacket, UINT32 pac
      */
 
     // The first byte contains the version, padding bit, extension bit, and csrc size
+    // 设置V CC
     *pCurPtr = ((pHeader->version << VERSION_SHIFT) | pHeader->csrcCount);
+    // 设置 P
     if (pHeader->padding) {
         *pCurPtr |= (1 << PADDING_SHIFT);
     }
+    // 设置 X
     if (pHeader->extension) {
         *pCurPtr |= (1 << EXTENSION_SHIFT);
     }
     pCurPtr++;
 
     // The second byte contains the marker bit and payload type.
+    // 设置 pyloadType
     *pCurPtr = pHeader->payloadType;
+    // 设置 M
     if (pHeader->marker) {
         *pCurPtr |= (1 << MARKER_SHIFT);
     }
@@ -289,19 +304,24 @@ STATUS setBytesFromRtpPacket(PRtpPacket pRtpPacket, PBYTE pRawPacket, UINT32 pac
     // https://tools.ietf.org/html/rfc7741#page-5
     // All integer fields in the specifications are encoded as
     //   unsigned integers in network octet order.
+    // 设置序列号
     putUnalignedInt16BigEndian(pCurPtr, pHeader->sequenceNumber);
     pCurPtr += SIZEOF(UINT16);
 
+    // 设置时间戳
     putUnalignedInt32BigEndian(pCurPtr, pHeader->timestamp);
     pCurPtr += SIZEOF(UINT32);
 
+    // 设置SSRC
     putUnalignedInt32BigEndian(pCurPtr, pHeader->ssrc);
     pCurPtr += SIZEOF(UINT32);
 
+    // 设置CSRC (4 * CC)字节
     for (i = 0; i < pHeader->csrcCount; i++, pCurPtr += SIZEOF(UINT32)) {
         putUnalignedInt32BigEndian(pCurPtr, pHeader->csrcArray[i]);
     }
 
+    // 设置 拓展头(当X位置1)
     if (pHeader->extension) {
         // the payload must be in 32-bit words.
         CHK((pHeader->extensionLength) % SIZEOF(UINT32) == 0, STATUS_RTP_INVALID_EXTENSION_LEN);
@@ -313,7 +333,7 @@ STATUS setBytesFromRtpPacket(PRtpPacket pRtpPacket, PBYTE pRawPacket, UINT32 pac
         MEMCPY(pCurPtr, pHeader->extensionPayload, pHeader->extensionLength);
         pCurPtr += pHeader->extensionLength;
     }
-
+    // 设置payload
     if (pRtpPacket->payload != NULL && pRtpPacket->payloadLength > 0) {
         MEMCPY(pCurPtr, pRtpPacket->payload, pRtpPacket->payloadLength);
     }
@@ -322,6 +342,7 @@ CleanUp:
     return retStatus;
 }
 
+// 构建多个RtpPacket
 STATUS constructRtpPackets(PPayloadArray pPayloadArray, UINT8 payloadType, UINT16 startSequenceNumber, UINT32 timestamp, UINT32 ssrc,
                            PRtpPacket pPackets, UINT32 packetCount)
 {

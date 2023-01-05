@@ -47,18 +47,28 @@ extern "C" {
 #define RTCP_FIRST_REPORT_DELAY (3 * HUNDREDS_OF_NANOS_IN_A_SECOND)
 
 typedef enum {
+    // 关键帧请求
     RTCP_PACKET_TYPE_FIR = 192, // https://tools.ietf.org/html/rfc2032#section-5.2.1
+    // 发送者报告
     RTCP_PACKET_TYPE_SENDER_REPORT = 200,
+    // 接受者报告
     RTCP_PACKET_TYPE_RECEIVER_REPORT = 201, // https://tools.ietf.org/html/rfc3550#section-6.4.2
+    // 源描述项
     RTCP_PACKET_TYPE_SOURCE_DESCRIPTION = 202,
+    // 传输层反馈 RTPFB
     RTCP_PACKET_TYPE_GENERIC_RTP_FEEDBACK = 205,
+    // payload反馈 PSFB
     RTCP_PACKET_TYPE_PAYLOAD_SPECIFIC_FEEDBACK = 206,
 } RTCP_PACKET_TYPE;
 
 typedef enum {
+    // 丢包请求
     RTCP_FEEDBACK_MESSAGE_TYPE_NACK = 1,
+    // 图像丢失
     RTCP_PSFB_PLI = 1, // https://tools.ietf.org/html/rfc4585#section-6.3
+    // 片丢失
     RTCP_PSFB_SLI = 2, // https://tools.ietf.org/html/rfc4585#section-6.3.2
+    // 应用层消息
     RTCP_FEEDBACK_MESSAGE_TYPE_APPLICATION_LAYER_FEEDBACK = 15,
 } RTCP_FEEDBACK_MESSAGE_TYPE;
 
@@ -71,6 +81,7 @@ typedef enum {
  * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
  */
 
+// RTCP 头
 typedef struct {
     UINT8 version;
     UINT8 receptionReportCount;
@@ -79,6 +90,7 @@ typedef struct {
     UINT32 packetLength;
 } RtcpPacketHeader, *PRtcpPacketHeader;
 
+// RTCP 包
 typedef struct {
     RtcpPacketHeader header;
 

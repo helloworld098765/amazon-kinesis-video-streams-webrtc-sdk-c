@@ -2,6 +2,7 @@
 
 #include "../../Include_i.h"
 
+// 创建opus rtp payload
 STATUS createPayloadForOpus(UINT32 mtu, PBYTE opusFrame, UINT32 opusFrameLength, PBYTE payloadBuffer, PUINT32 pPayloadLength,
                             PUINT32 pPayloadSubLength, PUINT32 pPayloadSubLenSize)
 {
@@ -40,6 +41,7 @@ CleanUp:
     return retStatus;
 }
 
+// 从rtp payload数据中解析opusData
 STATUS depayOpusFromRtpPayload(PBYTE pRawPacket, UINT32 packetLength, PBYTE pOpusData, PUINT32 pOpusLength, PBOOL pIsStart)
 {
     ENTERS();

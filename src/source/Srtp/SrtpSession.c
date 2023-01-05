@@ -1,6 +1,7 @@
 #define LOG_CLASS "SRTP"
 #include "../Include_i.h"
 
+// 初始化SrtpSession
 STATUS initSrtpSession(PBYTE receiveKey, PBYTE transmitKey, KVS_SRTP_PROFILE profile, PSrtpSession* ppSrtpSession)
 {
     ENTERS();
@@ -64,6 +65,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收srtpSession资源
 STATUS freeSrtpSession(PSrtpSession* ppSrtpSession)
 {
     ENTERS();
@@ -93,6 +95,7 @@ CleanUp:
     return retStatus;
 }
 
+// 解密SrtpPacket
 STATUS decryptSrtpPacket(PSrtpSession pSrtpSession, PVOID encryptedMessage, PINT32 len)
 {
     ENTERS();
@@ -107,6 +110,7 @@ CleanUp:
     return retStatus;
 }
 
+// 解密SrtcpPacket
 STATUS decryptSrtcpPacket(PSrtpSession pSrtpSession, PVOID encryptedMessage, PINT32 len)
 {
     ENTERS();
@@ -122,6 +126,7 @@ CleanUp:
     return retStatus;
 }
 
+// 加密RtpPacket
 STATUS encryptRtpPacket(PSrtpSession pSrtpSession, PVOID message, PINT32 len)
 {
     ENTERS();
@@ -138,6 +143,7 @@ CleanUp:
     return retStatus;
 }
 
+// 加密RtcpPacket
 STATUS encryptRtcpPacket(PSrtpSession pSrtpSession, PVOID message, PINT32 len)
 {
     ENTERS();
