@@ -1,6 +1,7 @@
 #define LOG_CLASS "SessionDescription"
 #include "../Include_i.h"
 
+// 序列化SDP 结构体-->JSON
 STATUS serializeSessionDescriptionInit(PRtcSessionDescriptionInit pSessionDescriptionInit, PCHAR sessionDescriptionJSON,
                                        PUINT32 sessionDescriptionJSONLen)
 {
@@ -14,6 +15,7 @@ STATUS serializeSessionDescriptionInit(PRtcSessionDescriptionInit pSessionDescri
     inputSize = *sessionDescriptionJSONLen;
     *sessionDescriptionJSONLen = 0;
 
+    // 写入头{"type": "%s", "sdp": "
     amountWritten =
         SNPRINTF(sessionDescriptionJSON, sessionDescriptionJSON == NULL ? 0 : inputSize - *sessionDescriptionJSONLen,
                  SESSION_DESCRIPTION_INIT_TEMPLATE_HEAD, pSessionDescriptionInit->type == SDP_TYPE_OFFER ? SDP_OFFER_VALUE : SDP_ANSWER_VALUE);
@@ -26,6 +28,7 @@ STATUS serializeSessionDescriptionInit(PRtcSessionDescriptionInit pSessionDescri
     while ((next = STRNCHR(curr, (UINT32) (tail - curr), '\n')) != NULL) {
         lineLen = (UINT32) (next - curr);
 
+        // 剔除\r
         if (lineLen > 0 && curr[lineLen - 1] == '\r') {
             lineLen--;
         }
@@ -39,6 +42,7 @@ STATUS serializeSessionDescriptionInit(PRtcSessionDescriptionInit pSessionDescri
         curr = next + 1;
     }
 
+    // 拼接SDP尾部 "\"}"
     amountWritten = SNPRINTF(sessionDescriptionJSON + *sessionDescriptionJSONLen,
                              sessionDescriptionJSON == NULL ? 0 : inputSize - *sessionDescriptionJSONLen, SESSION_DESCRIPTION_INIT_TEMPLATE_TAIL);
     CHK(sessionDescriptionJSON == NULL || ((inputSize - *sessionDescriptionJSONLen) >= amountWritten), STATUS_BUFFER_TOO_SMALL);
@@ -50,6 +54,7 @@ CleanUp:
     return retStatus;
 }
 
+// 反序列化SDP JSON--->结构体
 STATUS deserializeSessionDescriptionInit(PCHAR sessionDescriptionJSON, UINT32 sessionDescriptionJSONLen,
                                          PRtcSessionDescriptionInit pSessionDescriptionInit)
 {
@@ -63,8 +68,10 @@ STATUS deserializeSessionDescriptionInit(PCHAR sessionDescriptionJSON, UINT32 se
     CHK(pSessionDescriptionInit != NULL && sessionDescriptionJSON != NULL, STATUS_NULL_ARG);
     MEMSET(pSessionDescriptionInit, 0x00, SIZEOF(RtcSessionDescriptionInit));
 
+    // 创建json解析器
     jsmn_init(&parser);
 
+    // 解析SDP Json
     tokenCount = jsmn_parse(&parser, sessionDescriptionJSON, sessionDescriptionJSONLen, tokens, ARRAY_SIZE(tokens));
     CHK(tokenCount > 1, STATUS_INVALID_API_CALL_RETURN_JSON);
     CHK(tokens[0].type == JSMN_OBJECT, STATUS_SESSION_DESCRIPTION_INIT_NOT_OBJECT);
@@ -144,7 +151,7 @@ CleanUp:
     return retStatus;
 }
 
-// 设置
+// 从offer中解析信息，设置payloadType
 /*
  * Populate map with PayloadTypes for codecs a KvsPeerConnection has enabled.
  */
@@ -170,6 +177,8 @@ STATUS setPayloadTypesFromOffer(PHashTable codecTable, PHashTable rtxTable, PSes
         bestFmtpScore = 0;
         attributeValue = pMediaDescription->mediaName;
         do {
+            // 比较第一个空格前 字符串
+            // m=audio 9 UDP/TLS/RTP/SAVPF 96
             if ((end = STRCHR(attributeValue, ' ')) != NULL) {
                 tokenLen = (end - attributeValue);
             } else {
@@ -187,13 +196,18 @@ STATUS setPayloadTypesFromOffer(PHashTable codecTable, PHashTable rtxTable, PSes
             }
         } while (end != NULL);
 
+        // 媒体信息属性
         for (currentAttribute = 0; currentAttribute < pMediaDescription->mediaAttributesCount; currentAttribute++) {
             attributeValue = pMediaDescription->sdpAttributes[currentAttribute].attributeValue;
 
+            // a=rtpmap:99 H264/90000
             CHK_STATUS(hashTableContains(codecTable, RTC_CODEC_H264_PROFILE_42E01F_LEVEL_ASYMMETRY_ALLOWED_PACKETIZATION_MODE, &supportCodec));
             if (supportCodec && (end = STRSTR(attributeValue, H264_VALUE)) != NULL) {
+                // 将99 转为数字
                 CHK_STATUS(STRTOUI64(attributeValue, end - 1, 10, &parsedPayloadType));
+                // 获取fmtp属性值 payloadType后的起始位置
                 fmtp = fmtpForPayloadType(parsedPayloadType, pSessionDescription);
+                // 打分
                 fmtpScore = getH264FmtpScore(fmtp);
                 // When there's no match, the last fmtp will be chosen. This will allow us to not break existing customers who might be using
                 // flexible decoders which can infer the video profile from the SPS header.
@@ -228,16 +242,20 @@ STATUS setPayloadTypesFromOffer(PHashTable codecTable, PHashTable rtxTable, PSes
                 CHK_STATUS(STRTOUI64(attributeValue, end - 1, 10, &parsedPayloadType));
                 CHK_STATUS(hashTableUpsert(codecTable, RTC_CODEC_ALAW, parsedPayloadType));
             }
-
+            // a=fmtp :97 apt =96
+            // 97 是 96重传数据
             if ((end = STRSTR(attributeValue, RTX_CODEC_VALUE)) != NULL) {
                 CHK_STATUS(STRTOUI64(end + STRLEN(RTX_CODEC_VALUE), NULL, 10, &parsedPayloadType));
                 if ((end = STRSTR(attributeValue, FMTP_VALUE)) != NULL) {
                     CHK_STATUS(STRTOUI64(end + STRLEN(FMTP_VALUE), NULL, 10, &fmtpVal));
+                    // payloadType 7bit
+                    // 0xXX 0xXX 0xXX(fmtpVal) 0xXX(aptValue)
                     aptFmtpVals[aptFmtpValCount++] = (UINT32) ((fmtpVal << 8u) & parsedPayloadType);
                 }
             }
         }
 
+        // 处理fmtp apt
         for (i = 0; i < aptFmtpValCount; i++) {
             aptFmtVal = aptFmtpVals[i];
             fmtpVal = aptFmtVal >> 8u;
@@ -311,20 +329,23 @@ CleanUp:
     return retStatus;
 }
 
+// 获取fmtp 属性值payloadType后面的数据
 PCHAR fmtpForPayloadType(UINT64 payloadType, PSessionDescription pSessionDescription)
 {
     UINT32 currentMedia, currentAttribute;
     PSdpMediaDescription pMediaDescription = NULL;
     CHAR payloadStr[MAX_SDP_ATTRIBUTE_VALUE_LENGTH];
-
+    // 置0
     MEMSET(payloadStr, 0x00, MAX_SDP_ATTRIBUTE_VALUE_LENGTH);
     SPRINTF(payloadStr, "%" PRId64, payloadType);
 
+    // a=fmtp :97 apt =96
     for (currentMedia = 0; currentMedia < pSessionDescription->mediaCount; currentMedia++) {
         pMediaDescription = &(pSessionDescription->mediaDescriptions[currentMedia]);
         for (currentAttribute = 0; currentAttribute < pMediaDescription->mediaAttributesCount; currentAttribute++) {
             if (STRCMP(pMediaDescription->sdpAttributes[currentAttribute].attributeName, "fmtp") == 0 &&
                 STRNCMP(pMediaDescription->sdpAttributes[currentAttribute].attributeValue, payloadStr, STRLEN(payloadStr)) == 0) {
+                // （a=fmtp :97 apt =96）返回(apt =96)
                 return pMediaDescription->sdpAttributes[currentAttribute].attributeValue + STRLEN(payloadStr) + 1;
             }
         }
@@ -337,6 +358,7 @@ PCHAR fmtpForPayloadType(UINT64 payloadType, PSessionDescription pSessionDescrip
  * Extracts a (hex) value after the provided prefix string. Returns true if
  * successful.
  */
+// 从字符串读取一个数
 BOOL readHexValue(PCHAR input, PCHAR prefix, PUINT32 value)
 {
     PCHAR substr = STRSTR(input, prefix);
@@ -359,6 +381,7 @@ BOOL readHexValue(PCHAR input, PCHAR prefix, PUINT32 value)
  * values can get tricky:
  * https://www.w3.org/TR/mediacapture-streams/#dfn-fitness-distance
  */
+// 从fmtp属性值payloadType后开始，查找值并打分
 UINT64 getH264FmtpScore(PCHAR fmtp)
 {
     UINT32 profileId = 0, packetizationMode = 0, levelAsymmetry = 0;
@@ -389,6 +412,7 @@ UINT64 getH264FmtpScore(PCHAR fmtp)
     return score;
 }
 
+// 填充媒体描述
 // Populate a single media section from a PKvsRtpTransceiver
 STATUS populateSingleMediaSection(PKvsPeerConnection pKvsPeerConnection, PKvsRtpTransceiver pKvsRtpTransceiver,
                                   PSdpMediaDescription pSdpMediaDescription, PSessionDescription pRemoteSessionDescription,
@@ -407,6 +431,7 @@ STATUS populateSingleMediaSection(PKvsPeerConnection pKvsPeerConnection, PKvsRtp
     CHK_STATUS(hashTableGet(pKvsPeerConnection->pCodecTable, pRtcMediaStreamTrack->codec, &payloadType));
     currentFmtp = fmtpForPayloadType(payloadType, &(pKvsPeerConnection->remoteSessionDescription));
 
+    // 填充mediaName m=video 9 UDP/TLS/RTP/SAVPF 99
     if (pRtcMediaStreamTrack->codec == RTC_CODEC_H264_PROFILE_42E01F_LEVEL_ASYMMETRY_ALLOWED_PACKETIZATION_MODE ||
         pRtcMediaStreamTrack->codec == RTC_CODEC_VP8) {
         if (pRtcMediaStreamTrack->codec == RTC_CODEC_H264_PROFILE_42E01F_LEVEL_ASYMMETRY_ALLOWED_PACKETIZATION_MODE) {
@@ -430,13 +455,16 @@ STATUS populateSingleMediaSection(PKvsPeerConnection pKvsPeerConnection, PKvsRtp
 
     CHK_STATUS(iceAgentPopulateSdpMediaDescriptionCandidates(pKvsPeerConnection->pIceAgent, pSdpMediaDescription, MAX_SDP_ATTRIBUTE_VALUE_LENGTH,
                                                              &attributeCount));
-
+    // 包含rtx
     if (containRtx) {
         STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "msid");
         SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%s %sRTX", pRtcMediaStreamTrack->streamId,
                 pRtcMediaStreamTrack->trackId);
         attributeCount++;
 
+        // ssrc-group 描述几个流之间的关系
+        // FID(Flow ID), 表示这几个源都是数据流
+        // a=ssrc-group:FID 1101026881 35931176（重传流）
         STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "ssrc-group");
         SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "FID %u %u", pKvsRtpTransceiver->sender.ssrc,
                 pKvsRtpTransceiver->sender.rtxSsrc);
@@ -448,27 +476,34 @@ STATUS populateSingleMediaSection(PKvsPeerConnection pKvsPeerConnection, PKvsRtp
         attributeCount++;
     }
 
+    // 别名
+    // a=ssrc :1101026881 cname:Tf3LnJwwJc0lgnxC
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "ssrc");
     SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%u cname:%s", pKvsRtpTransceiver->sender.ssrc,
             pKvsPeerConnection->localCNAME);
     attributeCount++;
 
+    // 在一个媒体流中可以有多路轨(track), 每个轨对应一个ssrc
+    // a=ssrc :1101026881 msid:3 eofXQZ24BqbQPRkcL49QddC5s84gauyOuUt
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "ssrc");
     SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%u msid:%s %s", pKvsRtpTransceiver->sender.ssrc,
             pRtcMediaStreamTrack->streamId, pRtcMediaStreamTrack->trackId);
     attributeCount++;
 
+    // mslabel 是容器的 ID，该容器中可以有多个流。
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "ssrc");
     SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%u mslabel:%s", pKvsRtpTransceiver->sender.ssrc,
             pRtcMediaStreamTrack->streamId);
     attributeCount++;
 
+    // label 是此媒体流的 ID。
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "ssrc");
     SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%u label:%s", pKvsRtpTransceiver->sender.ssrc,
             pRtcMediaStreamTrack->trackId);
     attributeCount++;
 
     if (containRtx) {
+        // 填充rtxSsrc
         STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "ssrc");
         SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%u cname:%s", pKvsRtpTransceiver->sender.rtxSsrc,
                 pKvsPeerConnection->localCNAME);
@@ -490,36 +525,48 @@ STATUS populateSingleMediaSection(PKvsPeerConnection pKvsPeerConnection, PKvsRtp
         attributeCount++;
     }
 
+    // 忽略!WebRTC 不使用该属性
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "rtcp");
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "9 IN IP4 0.0.0.0");
     attributeCount++;
 
+    // 用户名
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "ice-ufrag");
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, pKvsPeerConnection->localIceUfrag);
     attributeCount++;
 
+    // 密码
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "ice-pwd");
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, pKvsPeerConnection->localIcePwd);
     attributeCount++;
 
+    // 收信candidate 方式
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "ice-options");
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "trickle");
     attributeCount++;
 
+    // DTLS证书指纹
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "fingerprint");
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "sha-256 ");
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue + 8, pCertificateFingerprint);
     attributeCount++;
 
+    // setup:active - 作为 DTLS 客户端运行。
+    // setup:passive - 作为 DTLS 服务器运行。
+    // setup:actpass - 要求另一个 WebRTC Agent 选择。
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "setup");
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, pDtlsRole);
     attributeCount++;
 
+    // 该属性是每个 Media Description 的唯一 ID。用于标识媒体
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "mid");
     SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%d", mediaSectionId);
     attributeCount++;
 
     if (pKvsPeerConnection->isOffer) {
+        // SENDRECV 发送 接受
+        // SENDONLY 仅发送
+        // RECVONLY 仅接受
         switch (pKvsRtpTransceiver->transceiver.direction) {
             case RTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV:
                 STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "sendrecv");
@@ -536,6 +583,7 @@ STATUS populateSingleMediaSection(PKvsPeerConnection pKvsPeerConnection, PKvsRtp
                 STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "inactive");
         }
     } else {
+        // 从pRemoteSessionDescription选择 收发器模式
         pSdpMediaDescriptionRemote = &pRemoteSessionDescription->mediaDescriptions[mediaSectionId];
         remoteAttributeCount = pSdpMediaDescriptionRemote->mediaAttributesCount;
 
@@ -555,12 +603,17 @@ STATUS populateSingleMediaSection(PKvsPeerConnection pKvsPeerConnection, PKvsRtp
 
     attributeCount++;
 
+    // RTCP 与RTP 复用传输通道
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "rtcp-mux");
     attributeCount++;
 
+    // 减少RTCP 尺寸
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "rtcp-rsize");
     attributeCount++;
 
+    // rtpmap 该属性用于将特定的编解码器映射到 RTP 有效负载类型。
+    // 有效负载类型不是静态的，因此对于每次呼叫，发起者都需要确定每个编解码器的有效负载类型。
+    // H264
     if (pRtcMediaStreamTrack->codec == RTC_CODEC_H264_PROFILE_42E01F_LEVEL_ASYMMETRY_ALLOWED_PACKETIZATION_MODE) {
         if (pKvsPeerConnection->isOffer) {
             currentFmtp = DEFAULT_H264_FMTP;
@@ -585,7 +638,9 @@ STATUS populateSingleMediaSection(PKvsPeerConnection pKvsPeerConnection, PKvsRtp
             SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%" PRId64 " apt=%" PRId64 "", rtxPayloadType, payloadType);
             attributeCount++;
         }
-    } else if (pRtcMediaStreamTrack->codec == RTC_CODEC_OPUS) {
+    }
+    // OPUS
+    else if (pRtcMediaStreamTrack->codec == RTC_CODEC_OPUS) {
         if (pKvsPeerConnection->isOffer) {
             currentFmtp = DEFAULT_OPUS_FMTP;
         }
@@ -598,7 +653,9 @@ STATUS populateSingleMediaSection(PKvsPeerConnection pKvsPeerConnection, PKvsRtp
             SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%" PRId64 " %s", payloadType, currentFmtp);
             attributeCount++;
         }
-    } else if (pRtcMediaStreamTrack->codec == RTC_CODEC_VP8) {
+    }
+    // VP8
+    else if (pRtcMediaStreamTrack->codec == RTC_CODEC_VP8) {
         STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "rtpmap");
         SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%" PRId64 " " VP8_VALUE, payloadType);
         attributeCount++;
@@ -613,16 +670,21 @@ STATUS populateSingleMediaSection(PKvsPeerConnection pKvsPeerConnection, PKvsRtp
             SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%" PRId64 " apt=%" PRId64 "", rtxPayloadType, payloadType);
             attributeCount++;
         }
-    } else if (pRtcMediaStreamTrack->codec == RTC_CODEC_MULAW) {
+    }
+    // MULAW rtpmap填充
+    else if (pRtcMediaStreamTrack->codec == RTC_CODEC_MULAW) {
         STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "rtpmap");
         SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%" PRId64 " " MULAW_VALUE, payloadType);
         attributeCount++;
-    } else if (pRtcMediaStreamTrack->codec == RTC_CODEC_ALAW) {
+    }
+    // ALAW rtpmap填充
+    else if (pRtcMediaStreamTrack->codec == RTC_CODEC_ALAW) {
         STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "rtpmap");
         SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%" PRId64 " " ALAW_VALUE, payloadType);
         attributeCount++;
     }
 
+    // RTCP 反馈
     STRCPY(pSdpMediaDescription->sdpAttributes[attributeCount].attributeName, "rtcp-fb");
     SPRINTF(pSdpMediaDescription->sdpAttributes[attributeCount].attributeValue, "%" PRId64 " nack", payloadType);
     attributeCount++;
@@ -645,6 +707,7 @@ CleanUp:
     return retStatus;
 }
 
+// 填充DataChannel SDP
 STATUS populateSessionDescriptionDataChannel(PKvsPeerConnection pKvsPeerConnection, PSdpMediaDescription pSdpMediaDescription,
                                              PCHAR pCertificateFingerprint, UINT32 mediaSectionId, PCHAR pDtlsRole)
 {
@@ -694,6 +757,7 @@ CleanUp:
     return retStatus;
 }
 
+// 判断RemoteSessionDescription是否有m=video m=audio
 BOOL isPresentInRemote(PKvsRtpTransceiver pKvsRtpTransceiver, PSessionDescription pRemoteSessionDescription)
 {
     PCHAR remoteAttributeValue, end;
@@ -706,6 +770,7 @@ BOOL isPresentInRemote(PKvsRtpTransceiver pKvsRtpTransceiver, PSessionDescriptio
         pRemoteMediaDescription = &pRemoteSessionDescription->mediaDescriptions[i];
         remoteAttributeValue = pRemoteMediaDescription->mediaName;
 
+        // 判断mediaName 是video audio
         if ((end = STRCHR(remoteAttributeValue, ' ')) != NULL) {
             remoteTokenLen = (end - remoteAttributeValue);
         } else {
@@ -733,6 +798,7 @@ BOOL isPresentInRemote(PKvsRtpTransceiver pKvsRtpTransceiver, PSessionDescriptio
     return wasFound;
 }
 
+// 用KvsPeerConnection的当前状态来填充SessionDescription的媒体部分
 // Populate the media sections of a SessionDescription with the current state of the KvsPeerConnection
 STATUS populateSessionDescriptionMedia(PKvsPeerConnection pKvsPeerConnection, PSessionDescription pRemoteSessionDescription,
                                        PSessionDescription pLocalSessionDescription)
@@ -772,7 +838,7 @@ STATUS populateSessionDescriptionMedia(PKvsPeerConnection pKvsPeerConnection, PS
             }
         }
     }
-
+    // 填充DataChannel SDP
     if (pKvsPeerConnection->sctpIsEnabled) {
         CHK(pLocalSessionDescription->mediaCount < MAX_SDP_SESSION_MEDIA_COUNT, STATUS_SESSION_DESCRIPTION_MAX_MEDIA_COUNT);
         CHK_STATUS(populateSessionDescriptionDataChannel(pKvsPeerConnection,
@@ -787,6 +853,7 @@ CleanUp:
     return retStatus;
 }
 
+// 用KvsPeerConnection的当前状态填充一个SessionDescription。
 // Populate a SessionDescription with the current state of the KvsPeerConnection
 STATUS populateSessionDescription(PKvsPeerConnection pKvsPeerConnection, PSessionDescription pRemoteSessionDescription,
                                   PSessionDescription pLocalSessionDescription)
@@ -805,6 +872,8 @@ STATUS populateSessionDescription(PKvsPeerConnection pKvsPeerConnection, PSessio
     MEMSET(bundleValue, 0, MAX_SDP_ATTRIBUTE_VALUE_LENGTH);
     MEMSET(wmsValue, 0, MAX_SDP_ATTRIBUTE_VALUE_LENGTH);
 
+    // 填充o=
+    // o=- 8567802084787497323 2 IN IP4 127.0.0.1
     STRCPY(pLocalSessionDescription->sdpOrigin.userName, "-");
     pLocalSessionDescription->sdpOrigin.sessionId = RAND();
     pLocalSessionDescription->sdpOrigin.sessionVersion = 2;
@@ -812,16 +881,23 @@ STATUS populateSessionDescription(PKvsPeerConnection pKvsPeerConnection, PSessio
     STRCPY(pLocalSessionDescription->sdpOrigin.sdpConnectionInformation.addressType, "IP4");
     STRCPY(pLocalSessionDescription->sdpOrigin.sdpConnectionInformation.connectionAddress, "127.0.0.1");
 
+    // 填充s=
+    // s=-
     STRCPY(pLocalSessionDescription->sessionName, "-");
 
+    // 填充t= 会话时长
+    // t=0 0
     pLocalSessionDescription->timeDescriptionCount = 1;
     pLocalSessionDescription->sdpTimeDescription[0].startTime = 0;
     pLocalSessionDescription->sdpTimeDescription[0].stopTime = 0;
 
+    // 音视频传输采用多路复用方式， 通过同一个通道传输
+    // 填充a=group:BUNDLE 0 1
     STRCPY(pLocalSessionDescription->sdpAttributes[0].attributeName, "group");
     STRCPY(pLocalSessionDescription->sdpAttributes[0].attributeValue, BUNDLE_KEY);
     for (curr = (pLocalSessionDescription->sdpAttributes[0].attributeValue + ARRAY_SIZE(BUNDLE_KEY) - 1), i = 0;
          i < pLocalSessionDescription->mediaCount; i++) {
+        // c=IN IP4 127.0.0.1
         STRCPY(pLocalSessionDescription->mediaDescriptions[i].sdpConnectionInformation.networkType, "IN");
         STRCPY(pLocalSessionDescription->mediaDescriptions[i].sdpConnectionInformation.addressType, "IP4");
         STRCPY(pLocalSessionDescription->mediaDescriptions[i].sdpConnectionInformation.connectionAddress, "127.0.0.1");
@@ -835,6 +911,12 @@ STATUS populateSessionDescription(PKvsPeerConnection pKvsPeerConnection, PSessio
     }
     pLocalSessionDescription->sessionAttributesCount++;
 
+    // WMS(WebRTC Media Stream)
+    // 因为上面的BUNDLE 使得音视频可以复用传输通道
+    // 所以WebRTC 定义一个媒体流来对音视频进行统一描述
+    // 媒体流中可以包含多路轨（ 音频轨、视频轨… … )
+    // 每个轨对应一个SSRC
+    // a=msid-semantic: WMS myKvsVideoStream
     STRCPY(pLocalSessionDescription->sdpAttributes[pLocalSessionDescription->sessionAttributesCount].attributeName, "msid-semantic");
     STRCPY(pLocalSessionDescription->sdpAttributes[pLocalSessionDescription->sessionAttributesCount].attributeValue, " WMS myKvsVideoStream");
     pLocalSessionDescription->sessionAttributesCount++;
@@ -848,6 +930,7 @@ CleanUp:
 // primarily meant to be used by reorderTransceiverByRemoteDescription
 // Find a Transceiver with n codec, and then copy it to the end of the transceivers
 // this allows us to re-order by the order the remote dictates
+// 找到目标pKvsRtpTransceiver， 移动到链表的尾部
 STATUS copyTransceiverWithCodec(PKvsPeerConnection pKvsPeerConnection, RTC_CODEC rtcCodec, PBOOL pDidFindCodec)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -880,6 +963,7 @@ CleanUp:
     return retStatus;
 }
 
+// 扫描 mediaName mediaAttributes 找出支持的codecs
 STATUS reorderTransceiverByRemoteDescription(PKvsPeerConnection pKvsPeerConnection, PSessionDescription pRemoteSessionDescription)
 {
     ENTERS();
@@ -898,6 +982,7 @@ STATUS reorderTransceiverByRemoteDescription(PKvsPeerConnection pKvsPeerConnecti
         foundMediaSectionWithCodec = FALSE;
 
         // Scan the media section name for any codecs we support
+        // 扫描媒体描述，找出支持的codecs
         attributeValue = pMediaDescription->mediaName;
 
         do {
@@ -927,6 +1012,7 @@ STATUS reorderTransceiverByRemoteDescription(PKvsPeerConnection pKvsPeerConnecti
         } while (end != NULL && !foundMediaSectionWithCodec);
 
         // Scan the media section attributes for codecs we support
+        // 扫描媒体属性，找出支持的codecs
         for (currentAttribute = 0; currentAttribute < pMediaDescription->mediaAttributesCount && !foundMediaSectionWithCodec; currentAttribute++) {
             attributeValue = pMediaDescription->sdpAttributes[currentAttribute].attributeValue;
 
@@ -964,6 +1050,7 @@ CleanUp:
     return retStatus;
 }
 
+// 反序列化RtcIceCandidate
 STATUS deserializeRtcIceCandidateInit(PCHAR pJson, UINT32 jsonLen, PRtcIceCandidateInit pRtcIceCandidateInit)
 {
     ENTERS();
@@ -975,8 +1062,10 @@ STATUS deserializeRtcIceCandidateInit(PCHAR pJson, UINT32 jsonLen, PRtcIceCandid
     CHK(pRtcIceCandidateInit != NULL && pJson != NULL, STATUS_NULL_ARG);
     MEMSET(pRtcIceCandidateInit->candidate, 0x00, MAX_ICE_CANDIDATE_INIT_CANDIDATE_LEN + 1);
 
+    // 创建json解析器
     jsmn_init(&parser);
 
+    // 解析数据
     tokenCount = jsmn_parse(&parser, pJson, jsonLen, tokens, ARRAY_SIZE(tokens));
     CHK(tokenCount > 1, STATUS_INVALID_API_CALL_RETURN_JSON);
     CHK(tokens[0].type == JSMN_OBJECT, STATUS_ICE_CANDIDATE_INIT_MALFORMED);
@@ -995,6 +1084,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置接收者SSRC
 STATUS setReceiversSsrc(PSessionDescription pRemoteSessionDescription, PDoubleList pTransceivers)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1009,6 +1099,7 @@ STATUS setReceiversSsrc(PSessionDescription pRemoteSessionDescription, PDoubleLi
 
     for (currentMedia = 0; currentMedia < pRemoteSessionDescription->mediaCount; currentMedia++) {
         pMediaDescription = &(pRemoteSessionDescription->mediaDescriptions[currentMedia]);
+        // 判断video or audio
         isVideoMediaSection = (STRNCMP(pMediaDescription->mediaName, MEDIA_SECTION_VIDEO_VALUE, ARRAY_SIZE(MEDIA_SECTION_VIDEO_VALUE) - 1) == 0);
         isAudioMediaSection = (STRNCMP(pMediaDescription->mediaName, MEDIA_SECTION_AUDIO_VALUE, ARRAY_SIZE(MEDIA_SECTION_AUDIO_VALUE) - 1) == 0);
         foundSsrc = FALSE;
@@ -1016,6 +1107,7 @@ STATUS setReceiversSsrc(PSessionDescription pRemoteSessionDescription, PDoubleLi
 
         if (isVideoMediaSection || isAudioMediaSection) {
             for (currentAttribute = 0; currentAttribute < pMediaDescription->mediaAttributesCount && !foundSsrc; currentAttribute++) {
+                // a=ssrc:655200127(转为数字) cname:cN6uEO6BC954I+Xx
                 if (STRNCMP(pMediaDescription->sdpAttributes[currentAttribute].attributeName, SSRC_KEY,
                             STRLEN(pMediaDescription->sdpAttributes[currentAttribute].attributeName)) == 0) {
                     if ((end = STRCHR(pMediaDescription->sdpAttributes[currentAttribute].attributeValue, ' ')) != NULL) {
@@ -1031,9 +1123,12 @@ STATUS setReceiversSsrc(PSessionDescription pRemoteSessionDescription, PDoubleLi
                     CHK_STATUS(doubleListGetNodeData(pCurNode, &data));
                     pKvsRtpTransceiver = (PKvsRtpTransceiver) data;
                     codec = pKvsRtpTransceiver->sender.track.codec;
+
+                    // 判断codec 类型video or audio
                     isVideoCodec = (codec == RTC_CODEC_VP8 || codec == RTC_CODEC_H264_PROFILE_42E01F_LEVEL_ASYMMETRY_ALLOWED_PACKETIZATION_MODE);
                     isAudioCodec = (codec == RTC_CODEC_MULAW || codec == RTC_CODEC_ALAW || codec == RTC_CODEC_OPUS);
 
+                    // 设置ssrc
                     if (pKvsRtpTransceiver->jitterBufferSsrc == 0 &&
                         ((isVideoCodec && isVideoMediaSection) || (isAudioCodec && isAudioMediaSection))) {
                         // Finish iteration, we assigned the ssrc move on to next media section

@@ -4,6 +4,7 @@
 
 typedef STATUS (*RtpPayloadFunc)(UINT32, PBYTE, UINT32, PBYTE, PUINT32, PUINT32, PUINT32);
 
+// 创建KvsRtpTransceiver
 STATUS createKvsRtpTransceiver(RTC_RTP_TRANSCEIVER_DIRECTION direction, PKvsPeerConnection pKvsPeerConnection, UINT32 ssrc, UINT32 rtxSsrc,
                                PRtcMediaStreamTrack pRtcMediaStreamTrack, PJitterBuffer pJitterBuffer, RTC_CODEC rtcCodec,
                                PKvsRtpTransceiver* ppKvsRtpTransceiver)
@@ -55,6 +56,7 @@ STATUS freeTransceiver(PRtcRtpTransceiver* pRtcRtpTransceiver)
     return STATUS_NOT_IMPLEMENTED;
 }
 
+// 回收KvsRtpTransceiver资源
 STATUS freeKvsRtpTransceiver(PKvsRtpTransceiver* ppKvsRtpTransceiver)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -91,6 +93,7 @@ CleanUp:
     return retStatus;
 }
 
+// kvsRtpTransceiver设置JitterBuffer
 STATUS kvsRtpTransceiverSetJitterBuffer(PKvsRtpTransceiver pKvsRtpTransceiver, PJitterBuffer pJitterBuffer)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -103,6 +106,7 @@ CleanUp:
     return retStatus;
 }
 
+// transceiver 设置onFrame回调、数据
 STATUS transceiverOnFrame(PRtcRtpTransceiver pRtcRtpTransceiver, UINT64 customData, RtcOnFrame rtcOnFrame)
 {
     ENTERS();
@@ -111,8 +115,8 @@ STATUS transceiverOnFrame(PRtcRtpTransceiver pRtcRtpTransceiver, UINT64 customDa
 
     CHK(pKvsRtpTransceiver != NULL && rtcOnFrame != NULL, STATUS_NULL_ARG);
 
-    pKvsRtpTransceiver->onFrame = rtcOnFrame;
-    pKvsRtpTransceiver->onFrameCustomData = customData;
+    pKvsRtpTransceiver->onFrame = rtcOnFrame;           // 设置onFrame回调函数
+    pKvsRtpTransceiver->onFrameCustomData = customData; // 设置数据
 
 CleanUp:
 
@@ -120,6 +124,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置OnBandwidthEstimation(带宽估算)回调、数据
 STATUS transceiverOnBandwidthEstimation(PRtcRtpTransceiver pRtcRtpTransceiver, UINT64 customData, RtcOnBandwidthEstimation rtcOnBandwidthEstimation)
 {
     ENTERS();
@@ -128,8 +133,8 @@ STATUS transceiverOnBandwidthEstimation(PRtcRtpTransceiver pRtcRtpTransceiver, U
 
     CHK(pKvsRtpTransceiver != NULL && rtcOnBandwidthEstimation != NULL, STATUS_NULL_ARG);
 
-    pKvsRtpTransceiver->onBandwidthEstimation = rtcOnBandwidthEstimation;
-    pKvsRtpTransceiver->onBandwidthEstimationCustomData = customData;
+    pKvsRtpTransceiver->onBandwidthEstimation = rtcOnBandwidthEstimation;   // 设置带宽估算函数
+    pKvsRtpTransceiver->onBandwidthEstimationCustomData = customData;       // 设置数据
 
 CleanUp:
 
@@ -137,6 +142,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置OnPictureLoss回调、数据
 STATUS transceiverOnPictureLoss(PRtcRtpTransceiver pRtcRtpTransceiver, UINT64 customData, RtcOnPictureLoss onPictureLoss)
 {
     ENTERS();
@@ -145,8 +151,8 @@ STATUS transceiverOnPictureLoss(PRtcRtpTransceiver pRtcRtpTransceiver, UINT64 cu
 
     CHK(pKvsRtpTransceiver != NULL && onPictureLoss != NULL, STATUS_NULL_ARG);
 
-    pKvsRtpTransceiver->onPictureLoss = onPictureLoss;
-    pKvsRtpTransceiver->onPictureLossCustomData = customData;
+    pKvsRtpTransceiver->onPictureLoss = onPictureLoss;          // 设置onPictureLoss 回调
+    pKvsRtpTransceiver->onPictureLossCustomData = customData;   // 设置数据
 
 CleanUp:
 
@@ -154,11 +160,13 @@ CleanUp:
     return retStatus;
 }
 
+// 更新媒体流统计信息
 STATUS updateEncoderStats(PRtcRtpTransceiver pRtcRtpTransceiver, PRtcEncoderStats encoderStats)
 {
     STATUS retStatus = STATUS_SUCCESS;
     PKvsRtpTransceiver pKvsRtpTransceiver = (PKvsRtpTransceiver) pRtcRtpTransceiver;
     CHK(pKvsRtpTransceiver != NULL && encoderStats != NULL, STATUS_NULL_ARG);
+    // 加锁
     MUTEX_LOCK(pKvsRtpTransceiver->statsLock);
     pKvsRtpTransceiver->outboundStats.totalEncodeTime += encoderStats->encodeTimeMsec;
     pKvsRtpTransceiver->outboundStats.targetBitrate = encoderStats->targetBitrate;
@@ -173,6 +181,7 @@ STATUS updateEncoderStats(PRtcRtpTransceiver pRtcRtpTransceiver, PRtcEncoderStat
     if (encoderStats->encoderImplementation[0] != '\0')
         STRNCPY(pKvsRtpTransceiver->outboundStats.encoderImplementation, encoderStats->encoderImplementation, MAX_STATS_STRING_LENGTH);
 
+    // 解锁
     MUTEX_UNLOCK(pKvsRtpTransceiver->statsLock);
 
 CleanUp:
@@ -181,6 +190,7 @@ CleanUp:
     return retStatus;
 }
 
+//写入Frame
 STATUS writeFrame(PRtcRtpTransceiver pRtcRtpTransceiver, PFrame pFrame)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -226,9 +236,12 @@ STATUS writeFrame(PRtcRtpTransceiver pRtcRtpTransceiver, PFrame pFrame)
         }
     }
 
+    // 加锁
     MUTEX_LOCK(pKvsPeerConnection->pSrtpSessionLock);
     locked = TRUE;
     CHK(pKvsPeerConnection->pSrtpSession != NULL, STATUS_SRTP_NOT_READY_YET); // Discard packets till SRTP is ready
+    
+    // 设置payload生成函数、rtpTimestamp
     switch (pKvsRtpTransceiver->sender.track.codec) {
         case RTC_CODEC_H264_PROFILE_42E01F_LEVEL_ASYMMETRY_ALLOWED_PACKETIZATION_MODE:
             rtpPayloadFunc = createPayloadForH264;
@@ -257,22 +270,27 @@ STATUS writeFrame(PRtcRtpTransceiver pRtcRtpTransceiver, PFrame pFrame)
 
     rtpTimestamp += randomRtpTimeoffset;
 
+    // 获取payloadLength、payloadSubLenSize
     CHK_STATUS(rtpPayloadFunc(pKvsPeerConnection->MTU, (PBYTE) pFrame->frameData, pFrame->size, NULL, &(pPayloadArray->payloadLength), NULL,
                               &(pPayloadArray->payloadSubLenSize)));
+    // 扩容
     if (pPayloadArray->payloadLength > pPayloadArray->maxPayloadLength) {
         SAFE_MEMFREE(pPayloadArray->payloadBuffer);
         pPayloadArray->payloadBuffer = (PBYTE) MEMALLOC(pPayloadArray->payloadLength);
         pPayloadArray->maxPayloadLength = pPayloadArray->payloadLength;
     }
+    // 扩容
     if (pPayloadArray->payloadSubLenSize > pPayloadArray->maxPayloadSubLenSize) {
         SAFE_MEMFREE(pPayloadArray->payloadSubLength);
         pPayloadArray->payloadSubLength = (PUINT32) MEMALLOC(pPayloadArray->payloadSubLenSize * SIZEOF(UINT32));
         pPayloadArray->maxPayloadSubLenSize = pPayloadArray->payloadSubLenSize;
     }
+    // 创建payload
     CHK_STATUS(rtpPayloadFunc(pKvsPeerConnection->MTU, (PBYTE) pFrame->frameData, pFrame->size, pPayloadArray->payloadBuffer,
                               &(pPayloadArray->payloadLength), pPayloadArray->payloadSubLength, &(pPayloadArray->payloadSubLenSize)));
     pPacketList = (PRtpPacket) MEMALLOC(pPayloadArray->payloadSubLenSize * SIZEOF(RtpPacket));
 
+    // 构建RtpPacket
     CHK_STATUS(constructRtpPackets(pPayloadArray, pKvsRtpTransceiver->sender.payloadType, pKvsRtpTransceiver->sender.sequenceNumber, rtpTimestamp,
                                    pKvsRtpTransceiver->sender.ssrc, pPacketList, pPayloadArray->payloadSubLenSize));
     pKvsRtpTransceiver->sender.sequenceNumber = GET_UINT16_SEQ_NUM(pKvsRtpTransceiver->sender.sequenceNumber + pPayloadArray->payloadSubLenSize);
@@ -302,8 +320,11 @@ STATUS writeFrame(PRtcRtpTransceiver pRtcRtpTransceiver, PFrame pFrame)
             CHK_STATUS(rtpRollingBufferAddRtpPacket(pKvsRtpTransceiver->sender.packetBuffer, pRtpPacket));
         }
 
+        // 加密RtpPacket
         CHK_STATUS(encryptRtpPacket(pKvsPeerConnection->pSrtpSession, rawPacket, (PINT32) &packetLen));
+        // 发送数据
         sendStatus = iceAgentSendPacket(pKvsPeerConnection->pIceAgent, rawPacket, packetLen);
+
         if (sendStatus == STATUS_SEND_DATA_FAILED) {
             packetsDiscardedOnSend++;
             bytesDiscardedOnSend += packetLen - headerLen;
@@ -385,6 +406,7 @@ CleanUp:
     return retStatus;
 }
 
+// 写入RtpPacket
 STATUS writeRtpPacket(PKvsPeerConnection pKvsPeerConnection, PRtpPacket pRtpPacket)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -394,16 +416,20 @@ STATUS writeRtpPacket(PKvsPeerConnection pKvsPeerConnection, PRtpPacket pRtpPack
 
     CHK(pKvsPeerConnection != NULL && pRtpPacket != NULL && pRtpPacket->pRawPacket != NULL, STATUS_NULL_ARG);
 
+    // 加锁
     MUTEX_LOCK(pKvsPeerConnection->pSrtpSessionLock);
     locked = TRUE;
     CHK(pKvsPeerConnection->pSrtpSession != NULL, STATUS_SUCCESS);               // Discard packets till SRTP is ready
     pRawPacket = MEMALLOC(pRtpPacket->rawPacketLength + SRTP_AUTH_TAG_OVERHEAD); // For SRTP authentication tag
     rawLen = pRtpPacket->rawPacketLength;
     MEMCPY(pRawPacket, pRtpPacket->pRawPacket, pRtpPacket->rawPacketLength);
+    // 加密数据
     CHK_STATUS(encryptRtpPacket(pKvsPeerConnection->pSrtpSession, pRawPacket, &rawLen));
+    // 发送数据
     CHK_STATUS(iceAgentSendPacket(pKvsPeerConnection->pIceAgent, pRawPacket, rawLen));
 
 CleanUp:
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pKvsPeerConnection->pSrtpSessionLock);
     }
@@ -412,12 +438,14 @@ CleanUp:
     return retStatus;
 }
 
+// 查询是否存在指定SSRC的Transceiver
 STATUS hasTransceiverWithSsrc(PKvsPeerConnection pKvsPeerConnection, UINT32 ssrc)
 {
     PKvsRtpTransceiver p = NULL;
     return findTransceiverBySsrc(pKvsPeerConnection, &p, ssrc);
 }
 
+// 通过SSRC查找Transceiver
 STATUS findTransceiverBySsrc(PKvsPeerConnection pKvsPeerConnection, PKvsRtpTransceiver* ppTransceiver, UINT32 ssrc)
 {
     STATUS retStatus = STATUS_SUCCESS;

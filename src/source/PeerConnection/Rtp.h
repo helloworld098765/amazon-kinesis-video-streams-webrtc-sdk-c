@@ -23,16 +23,16 @@ extern "C" {
 
 typedef struct {
     UINT8 payloadType;
-    UINT8 rtxPayloadType;
-    UINT16 sequenceNumber;
-    UINT16 rtxSequenceNumber;
-    UINT32 ssrc;
-    UINT32 rtxSsrc;
-    PayloadArray payloadArray;
+    UINT8 rtxPayloadType;           // 重发payloadType
+    UINT16 sequenceNumber;          // 序列号
+    UINT16 rtxSequenceNumber;       // 重发序列号
+    UINT32 ssrc;                    // SSRC
+    UINT32 rtxSsrc;                 // 重发SSRC
+    PayloadArray payloadArray;      // RTP 负载
 
-    RtcMediaStreamTrack track;
-    PRtpRollingBuffer packetBuffer;
-    PRetransmitter retransmitter;
+    RtcMediaStreamTrack track;      // 媒体轨道
+    PRtpRollingBuffer packetBuffer; // 
+    PRetransmitter retransmitter;   // 重发器
 
     UINT64 rtpTimeOffset;
     UINT64 firstFrameWallClockTime; // 100ns precision
@@ -44,21 +44,21 @@ typedef struct {
 } RtcRtpSender, *PRtcRtpSender;
 
 typedef struct {
-    RtcRtpTransceiver transceiver;
-    RtcRtpSender sender;
+    RtcRtpTransceiver transceiver;                  //
+    RtcRtpSender sender;                            //发送器
 
-    PKvsPeerConnection pKvsPeerConnection;
+    PKvsPeerConnection pKvsPeerConnection;          //
 
-    UINT32 jitterBufferSsrc;
-    PJitterBuffer pJitterBuffer;
+    UINT32 jitterBufferSsrc;                        // 抖动Buffer SSRC
+    PJitterBuffer pJitterBuffer;                    // 抖动Buffer
 
-    UINT64 onFrameCustomData;
-    RtcOnFrame onFrame;
+    UINT64 onFrameCustomData;                       // 数据
+    RtcOnFrame onFrame;                             // onFrame回调函数
 
-    UINT64 onBandwidthEstimationCustomData;
-    RtcOnBandwidthEstimation onBandwidthEstimation;
+    UINT64 onBandwidthEstimationCustomData;         //
+    RtcOnBandwidthEstimation onBandwidthEstimation; //
     UINT64 onPictureLossCustomData;
-    RtcOnPictureLoss onPictureLoss;
+    RtcOnPictureLoss onPictureLoss;                 //
 
     PBYTE peerFrameBuffer;
     UINT32 peerFrameBufferSize;
