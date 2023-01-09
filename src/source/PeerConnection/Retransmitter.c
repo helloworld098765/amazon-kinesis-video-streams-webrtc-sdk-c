@@ -2,10 +2,12 @@
 
 #include "../Include_i.h"
 
+// 创建重发器
 STATUS createRetransmitter(UINT32 seqNumListLen, UINT32 validIndexListLen, PRetransmitter* ppRetransmitter)
 {
     ENTERS();
     STATUS retStatus = STATUS_SUCCESS;
+    // 创建重发器
     PRetransmitter pRetransmitter = MEMALLOC(SIZEOF(Retransmitter) + SIZEOF(UINT16) * seqNumListLen + SIZEOF(UINT64) * validIndexListLen);
     CHK(pRetransmitter != NULL, STATUS_NOT_ENOUGH_MEMORY);
     pRetransmitter->sequenceNumberList = (PUINT16) (pRetransmitter + 1);
@@ -14,6 +16,7 @@ STATUS createRetransmitter(UINT32 seqNumListLen, UINT32 validIndexListLen, PRetr
     pRetransmitter->validIndexListLen = validIndexListLen;
 
 CleanUp:
+    // 回收收发器资源
     if (STATUS_FAILED(retStatus) && pRetransmitter != NULL) {
         freeRetransmitter(&pRetransmitter);
         pRetransmitter = NULL;
@@ -25,6 +28,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收重发器资源
 STATUS freeRetransmitter(PRetransmitter* ppRetransmitter)
 {
     ENTERS();
