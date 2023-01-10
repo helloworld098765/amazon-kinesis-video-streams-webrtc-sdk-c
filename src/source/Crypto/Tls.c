@@ -1,6 +1,7 @@
 #define LOG_CLASS "TLS"
 #include "../Include_i.h"
 
+// 改变tlsSession State
 STATUS tlsSessionChangeState(PTlsSession pTlsSession, TLS_SESSION_STATE newState)
 {
     ENTERS();

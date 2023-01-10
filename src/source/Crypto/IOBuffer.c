@@ -1,13 +1,16 @@
 #define LOG_CLASS "IOBuffer"
 #include "../Include_i.h"
 
+// 创建IOBuffer
 STATUS createIOBuffer(UINT32 initialCap, PIOBuffer* ppBuffer)
 {
     STATUS retStatus = STATUS_SUCCESS;
     PIOBuffer pBuffer = NULL;
 
+    // 分配内存
     pBuffer = (PIOBuffer) MEMCALLOC(SIZEOF(IOBuffer), 1);
     CHK(pBuffer != NULL, STATUS_NOT_ENOUGH_MEMORY);
+
 
     if (initialCap != 0) {
         pBuffer->raw = (PBYTE) MEMALLOC(initialCap);
@@ -26,6 +29,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收IOBuffer资源
 STATUS freeIOBuffer(PIOBuffer* ppBuffer)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -44,6 +48,7 @@ CleanUp:
     return retStatus;
 }
 
+// 重置IOBuffer
 STATUS ioBufferReset(PIOBuffer pBuffer)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -67,6 +72,7 @@ STATUS ioBufferWrite(PIOBuffer pBuffer, PBYTE pData, UINT32 dataLen)
     CHK(pBuffer != NULL && pData != NULL, STATUS_NULL_ARG);
 
     freeSpace = pBuffer->cap - pBuffer->len;
+    // 空间不足，调整buffer大小
     if (freeSpace < dataLen) {
         newCap = pBuffer->len + dataLen;
         pBuffer->raw = MEMREALLOC(pBuffer->raw, newCap);
@@ -82,6 +88,7 @@ CleanUp:
     return retStatus;
 }
 
+// 读取IOBuffer
 STATUS ioBufferRead(PIOBuffer pBuffer, PBYTE pData, UINT32 bufferLen, PUINT32 pDataLen)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -94,6 +101,7 @@ STATUS ioBufferRead(PIOBuffer pBuffer, PBYTE pData, UINT32 bufferLen, PUINT32 pD
     MEMCPY(pData, pBuffer->raw + pBuffer->off, dataLen);
     pBuffer->off += dataLen;
 
+    // buffer数据已读完，len = 0,off = 0
     if (pBuffer->off == pBuffer->len) {
         ioBufferReset(pBuffer);
     }

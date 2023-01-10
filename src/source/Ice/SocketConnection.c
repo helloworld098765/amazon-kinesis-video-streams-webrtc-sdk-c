@@ -4,6 +4,7 @@
 #define LOG_CLASS "SocketConnection"
 #include "../Include_i.h"
 
+// 创建Socket Connection
 STATUS createSocketConnection(KVS_IP_FAMILY_TYPE familyType, KVS_SOCKET_PROTOCOL protocol, PKvsIpAddress pBindAddr, PKvsIpAddress pPeerIpAddr,
                               UINT64 customData, ConnectionDataAvailableFunc dataAvailableFn, UINT32 sendBufSize,
                               PSocketConnection* ppSocketConnection)
@@ -15,13 +16,18 @@ STATUS createSocketConnection(KVS_IP_FAMILY_TYPE familyType, KVS_SOCKET_PROTOCOL
     CHK(ppSocketConnection != NULL, STATUS_NULL_ARG);
     CHK(protocol == KVS_SOCKET_PROTOCOL_UDP || pPeerIpAddr != NULL, STATUS_INVALID_ARG);
 
+    // 分配内存
     pSocketConnection = (PSocketConnection) MEMCALLOC(1, SIZEOF(SocketConnection));
     CHK(pSocketConnection != NULL, STATUS_NOT_ENOUGH_MEMORY);
 
+    // 创建锁
     pSocketConnection->lock = MUTEX_CREATE(FALSE);
     CHK(pSocketConnection->lock != INVALID_MUTEX_VALUE, STATUS_INVALID_OPERATION);
 
+    // 创建socket
     CHK_STATUS(createSocket(familyType, protocol, sendBufSize, &pSocketConnection->localSocket));
+    
+    // 
     if (pBindAddr) {
         CHK_STATUS(socketBind(pBindAddr, pSocketConnection->localSocket));
         pSocketConnection->hostIpAddr = *pBindAddr;
@@ -56,6 +62,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收socket Connection资源
 STATUS freeSocketConnection(PSocketConnection* ppSocketConnection)
 {
     ENTERS();
@@ -70,18 +77,23 @@ STATUS freeSocketConnection(PSocketConnection* ppSocketConnection)
 
     // Await for the socket connection to be released
     shutdownTimeout = GETTIME() + KVS_ICE_TURN_CONNECTION_SHUTDOWN_TIMEOUT;
+    
+    //等待连接不在使用
     while (ATOMIC_LOAD_BOOL(&pSocketConnection->inUse) && GETTIME() < shutdownTimeout) {
         THREAD_SLEEP(KVS_ICE_SHORT_CHECK_DELAY);
     }
 
+    // 连接还在使用
     if (ATOMIC_LOAD_BOOL(&pSocketConnection->inUse)) {
         DLOGW("Shutting down socket connection timedout after %u seconds", KVS_ICE_TURN_CONNECTION_SHUTDOWN_TIMEOUT / HUNDREDS_OF_NANOS_IN_A_SECOND);
     }
 
+    // 回收锁资源
     if (IS_VALID_MUTEX_VALUE(pSocketConnection->lock)) {
         MUTEX_FREE(pSocketConnection->lock);
     }
 
+    // 回收TLS Session 资源
     if (pSocketConnection->pTlsSession != NULL) {
         freeTlsSession(&pSocketConnection->pTlsSession);
     }
@@ -90,6 +102,7 @@ STATUS freeSocketConnection(PSocketConnection* ppSocketConnection)
         DLOGW("Failed to close the local socket with 0x%08x", retStatus);
     }
 
+    // 回收Socket Session资源
     MEMFREE(pSocketConnection);
 
     *ppSocketConnection = NULL;
@@ -100,6 +113,7 @@ CleanUp:
     return retStatus;
 }
 
+// socketConnectionTlsSession  OutBoundPacket回调
 STATUS socketConnectionTlsSessionOutBoundPacket(UINT64 customData, PBYTE pBuffer, UINT32 bufferLen)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -113,6 +127,8 @@ CleanUp:
     return retStatus;
 }
 
+
+// socketConnectionTlsSession StateChange回调
 VOID socketConnectionTlsSessionOnStateChange(UINT64 customData, TLS_SESSION_STATE state)
 {
     PSocketConnection pSocketConnection = NULL;
@@ -141,6 +157,8 @@ VOID socketConnectionTlsSessionOnStateChange(UINT64 customData, TLS_SESSION_STAT
     }
 }
 
+
+// socketConnection 初始化 SecureConnection
 STATUS socketConnectionInitSecureConnection(PSocketConnection pSocketConnection, BOOL isServer)
 {
     ENTERS();
@@ -150,6 +168,7 @@ STATUS socketConnectionInitSecureConnection(PSocketConnection pSocketConnection,
 
     CHK(pSocketConnection != NULL, STATUS_NULL_ARG);
 
+    // 加锁
     MUTEX_LOCK(pSocketConnection->lock);
     locked = TRUE;
 
@@ -168,6 +187,7 @@ CleanUp:
         freeTlsSession(&pSocketConnection->pTlsSession);
     }
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSocketConnection->lock);
     }
@@ -176,6 +196,7 @@ CleanUp:
     return retStatus;
 }
 
+// socketConnection 发送数据
 STATUS socketConnectionSendData(PSocketConnection pSocketConnection, PBYTE pBuf, UINT32 bufLen, PKvsIpAddress pDestIp)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -185,21 +206,28 @@ STATUS socketConnectionSendData(PSocketConnection pSocketConnection, PBYTE pBuf,
     CHK((pSocketConnection->protocol == KVS_SOCKET_PROTOCOL_TCP || pDestIp != NULL), STATUS_INVALID_ARG);
 
     // Using a single CHK_WARN might output too much spew in bad network conditions
+    // 当连接状态为Closed
     if (ATOMIC_LOAD_BOOL(&pSocketConnection->connectionClosed)) {
         DLOGD("Warning: Failed to send data. Socket closed already");
         CHK(FALSE, STATUS_SOCKET_CONNECTION_CLOSED_ALREADY);
     }
 
+    // 加锁
     MUTEX_LOCK(pSocketConnection->lock);
     locked = TRUE;
 
     /* Should have a valid buffer */
     CHK(pBuf != NULL && bufLen > 0, STATUS_INVALID_ARG);
+    // tcp 安全连接
     if (pSocketConnection->protocol == KVS_SOCKET_PROTOCOL_TCP && pSocketConnection->secureConnection) {
         CHK_STATUS(tlsSessionPutApplicationData(pSocketConnection->pTlsSession, pBuf, bufLen));
-    } else if (pSocketConnection->protocol == KVS_SOCKET_PROTOCOL_TCP) {
+    }
+    // tcp
+    else if (pSocketConnection->protocol == KVS_SOCKET_PROTOCOL_TCP) {
         CHK_STATUS(retStatus = socketSendDataWithRetry(pSocketConnection, pBuf, bufLen, NULL, NULL));
-    } else if (pSocketConnection->protocol == KVS_SOCKET_PROTOCOL_UDP) {
+    }
+    // udp
+    else if (pSocketConnection->protocol == KVS_SOCKET_PROTOCOL_UDP) {
         CHK_STATUS(retStatus = socketSendDataWithRetry(pSocketConnection, pBuf, bufLen, pDestIp, NULL));
     } else {
         CHECK_EXT(FALSE, "socketConnectionSendData should not reach here. Nothing is sent.");
@@ -207,6 +235,7 @@ STATUS socketConnectionSendData(PSocketConnection pSocketConnection, PBYTE pBuf,
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSocketConnection->lock);
     }
@@ -214,6 +243,7 @@ CleanUp:
     return retStatus;
 }
 
+// socketConnection 读取数据
 STATUS socketConnectionReadData(PSocketConnection pSocketConnection, PBYTE pBuf, UINT32 bufferLen, PUINT32 pDataLen)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -222,12 +252,14 @@ STATUS socketConnectionReadData(PSocketConnection pSocketConnection, PBYTE pBuf,
     CHK(pSocketConnection != NULL && pBuf != NULL && pDataLen != NULL, STATUS_NULL_ARG);
     CHK(bufferLen != 0, STATUS_INVALID_ARG);
 
+    // 加锁
     MUTEX_LOCK(pSocketConnection->lock);
     locked = TRUE;
 
     // return early if connection is not secure
     CHK(pSocketConnection->secureConnection, retStatus);
 
+    // 读取数据
     CHK_STATUS(tlsSessionProcessPacket(pSocketConnection->pTlsSession, pBuf, bufferLen, pDataLen));
 
 CleanUp:
@@ -237,6 +269,7 @@ CleanUp:
         DLOGD("Warning: reading socket data failed with 0x%08x", retStatus);
     }
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSocketConnection->lock);
     }
@@ -244,18 +277,26 @@ CleanUp:
     return retStatus;
 }
 
+
+// 关闭socketConnection
 STATUS socketConnectionClosed(PSocketConnection pSocketConnection)
 {
     STATUS retStatus = STATUS_SUCCESS;
 
     CHK(pSocketConnection != NULL, STATUS_NULL_ARG);
     CHK(!ATOMIC_LOAD_BOOL(&pSocketConnection->connectionClosed), retStatus);
+
+    // 加锁
     MUTEX_LOCK(pSocketConnection->lock);
     DLOGD("Close socket %d", pSocketConnection->localSocket);
+    // 关闭连接
     ATOMIC_STORE_BOOL(&pSocketConnection->connectionClosed, TRUE);
+    
     if (pSocketConnection->pTlsSession != NULL) {
         tlsSessionShutdown(pSocketConnection->pTlsSession);
     }
+
+    // 解锁
     MUTEX_UNLOCK(pSocketConnection->lock);
 
 CleanUp:
@@ -265,6 +306,7 @@ CleanUp:
     return retStatus;
 }
 
+// 判断socket Connection 是closed状态
 BOOL socketConnectionIsClosed(PSocketConnection pSocketConnection)
 {
     if (pSocketConnection == NULL) {
@@ -274,6 +316,7 @@ BOOL socketConnectionIsClosed(PSocketConnection pSocketConnection)
     }
 }
 
+// 判断socket Connection 是Connected状态
 BOOL socketConnectionIsConnected(PSocketConnection pSocketConnection)
 {
     INT32 retVal;
@@ -284,10 +327,12 @@ BOOL socketConnectionIsConnected(PSocketConnection pSocketConnection)
 
     CHECK(pSocketConnection != NULL);
 
+    // udp
     if (pSocketConnection->protocol == KVS_SOCKET_PROTOCOL_UDP) {
         return TRUE;
     }
 
+    // ipv4
     if (pSocketConnection->peerIpAddr.family == KVS_IP_FAMILY_TYPE_IPV4) {
         addrLen = SIZEOF(struct sockaddr_in);
         MEMSET(&ipv4PeerAddr, 0x00, SIZEOF(ipv4PeerAddr));
@@ -295,7 +340,9 @@ BOOL socketConnectionIsConnected(PSocketConnection pSocketConnection)
         ipv4PeerAddr.sin_port = pSocketConnection->peerIpAddr.port;
         MEMCPY(&ipv4PeerAddr.sin_addr, pSocketConnection->peerIpAddr.address, IPV4_ADDRESS_LENGTH);
         peerSockAddr = (struct sockaddr*) &ipv4PeerAddr;
-    } else {
+    }
+    // ipv6
+    else {
         addrLen = SIZEOF(struct sockaddr_in6);
         MEMSET(&ipv6PeerAddr, 0x00, SIZEOF(ipv6PeerAddr));
         ipv6PeerAddr.sin6_family = AF_INET6;
@@ -304,8 +351,10 @@ BOOL socketConnectionIsConnected(PSocketConnection pSocketConnection)
         peerSockAddr = (struct sockaddr*) &ipv6PeerAddr;
     }
 
+    // 加锁
     MUTEX_LOCK(pSocketConnection->lock);
     retVal = connect(pSocketConnection->localSocket, peerSockAddr, addrLen);
+    // 解锁
     MUTEX_UNLOCK(pSocketConnection->lock);
 
     if (retVal == 0 || getErrorCode() == EISCONN) {
@@ -316,6 +365,8 @@ BOOL socketConnectionIsConnected(PSocketConnection pSocketConnection)
     return FALSE;
 }
 
+
+// socket发送数据，失败可重试
 STATUS socketSendDataWithRetry(PSocketConnection pSocketConnection, PBYTE buf, UINT32 bufLen, PKvsIpAddress pDestIp, PUINT32 pBytesWritten)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -333,7 +384,9 @@ STATUS socketSendDataWithRetry(PSocketConnection pSocketConnection, PBYTE buf, U
     CHK(pSocketConnection != NULL, STATUS_NULL_ARG);
     CHK(buf != NULL && bufLen > 0, STATUS_INVALID_ARG);
 
+    // 解析目标地址
     if (pDestIp != NULL) {
+        // ipv4
         if (IS_IPV4_ADDR(pDestIp)) {
             addrLen = SIZEOF(ipv4Addr);
             MEMSET(&ipv4Addr, 0x00, SIZEOF(ipv4Addr));
@@ -342,7 +395,9 @@ STATUS socketSendDataWithRetry(PSocketConnection pSocketConnection, PBYTE buf, U
             MEMCPY(&ipv4Addr.sin_addr, pDestIp->address, IPV4_ADDRESS_LENGTH);
             destAddr = (struct sockaddr*) &ipv4Addr;
 
-        } else {
+        }
+        // ipv6
+        else {
             addrLen = SIZEOF(ipv6Addr);
             MEMSET(&ipv6Addr, 0x00, SIZEOF(ipv6Addr));
             ipv6Addr.sin6_family = AF_INET6;
@@ -352,15 +407,21 @@ STATUS socketSendDataWithRetry(PSocketConnection pSocketConnection, PBYTE buf, U
         }
     }
 
+    // 发送数据，发送若失败，重试
     while (socketWriteAttempt < MAX_SOCKET_WRITE_RETRY && bytesWritten < bufLen) {
+        // 发送数据
         result = sendto(pSocketConnection->localSocket, buf + bytesWritten, bufLen - bytesWritten, NO_SIGNAL, destAddr, addrLen);
         if (result < 0) {
+            // 获取错误码
             errorNum = getErrorCode();
+            // EAGAIN 重试
+            // EWOULDBLOCK 操作将阻塞
             if (errorNum == EAGAIN || errorNum == EWOULDBLOCK) {
                 MEMSET(&wfds, 0x00, SIZEOF(struct pollfd));
                 wfds.fd = pSocketConnection->localSocket;
                 wfds.events = POLLOUT;
                 wfds.revents = 0;
+                // poll io 多路复用
                 result = POLL(&wfds, 1, SOCKET_SEND_RETRY_TIMEOUT_MILLI_SECOND);
 
                 if (result == 0) {
@@ -370,7 +431,9 @@ STATUS socketSendDataWithRetry(PSocketConnection pSocketConnection, PBYTE buf, U
                     DLOGD("poll() failed with errno %s", getErrorString(getErrorCode()));
                     break;
                 }
-            } else if (errorNum == EINTR) {
+            }
+            // 中断 系统调用
+            else if (errorNum == EINTR) {
                 /* nothing need to be done, just retry */
             } else {
                 /* fatal error from send() */
@@ -389,6 +452,7 @@ STATUS socketSendDataWithRetry(PSocketConnection pSocketConnection, PBYTE buf, U
         *pBytesWritten = bytesWritten;
     }
 
+    // 若不可重发 close socket
     if (result < 0) {
         CLOSE_SOCKET_IF_CANT_RETRY(errorNum, pSocketConnection);
     }

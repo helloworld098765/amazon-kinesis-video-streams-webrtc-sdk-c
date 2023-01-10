@@ -20,6 +20,7 @@ extern "C" {
 // 000.000.000.000
 #define KVS_MAX_IPV4_ADDRESS_STRING_LEN 15
 
+// 获取port
 #define KVS_GET_IP_ADDRESS_PORT(a) ((UINT16) getInt16((a)->port))
 
 #if defined(__MACH__)
@@ -41,6 +42,7 @@ extern "C" {
 #define KVS_SOCKET_IN_PROGRESS EINPROGRESS
 #endif
 
+// socket 协议
 typedef enum {
     KVS_SOCKET_PROTOCOL_NONE,
     KVS_SOCKET_PROTOCOL_TCP,

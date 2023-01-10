@@ -8,6 +8,7 @@
 // forward declaration
 STATUS jitterBufferInternalParse(PJitterBuffer pJitterBuffer, BOOL bufferClosed);
 
+// 创建JitterBuffer
 STATUS createJitterBuffer(FrameReadyFunc onFrameReadyFunc, FrameDroppedFunc onFrameDroppedFunc, DepayRtpPayloadFunc depayRtpPayloadFunc,
                           UINT32 maxLatency, UINT32 clockRate, UINT64 customData, PJitterBuffer* ppJitterBuffer)
 {
@@ -18,27 +19,36 @@ STATUS createJitterBuffer(FrameReadyFunc onFrameReadyFunc, FrameDroppedFunc onFr
     CHK(ppJitterBuffer != NULL && onFrameReadyFunc != NULL && onFrameDroppedFunc != NULL && depayRtpPayloadFunc != NULL, STATUS_NULL_ARG);
     CHK(clockRate != 0, STATUS_INVALID_ARG);
 
+    // 分配内存
     pJitterBuffer = (PJitterBuffer) MEMALLOC(SIZEOF(JitterBuffer));
     CHK(pJitterBuffer != NULL, STATUS_NOT_ENOUGH_MEMORY);
 
+    // 设置回调函数
     pJitterBuffer->onFrameReadyFn = onFrameReadyFunc;
     pJitterBuffer->onFrameDroppedFn = onFrameDroppedFunc;
     pJitterBuffer->depayPayloadFn = depayRtpPayloadFunc;
     pJitterBuffer->clockRate = clockRate;
 
+    // 设置最大延迟
     pJitterBuffer->maxLatency = maxLatency;
     if (pJitterBuffer->maxLatency == 0) {
         pJitterBuffer->maxLatency = DEFAULT_JITTER_BUFFER_MAX_LATENCY;
     }
+    // 2 * clockRate
     pJitterBuffer->maxLatency = pJitterBuffer->maxLatency * pJitterBuffer->clockRate / HUNDREDS_OF_NANOS_IN_A_SECOND;
 
+    // 最后一次Push 时间
     pJitterBuffer->lastPushTimestamp = 0;
+    // head 时间
     pJitterBuffer->headTimestamp = MAX_UINT32;
+    // 序列号
     pJitterBuffer->headSequenceNumber = MAX_SEQUENCE_NUM;
     pJitterBuffer->started = FALSE;
     pJitterBuffer->firstFrameProcessed = FALSE;
 
+    // 设置数据
     pJitterBuffer->customData = customData;
+    // 创建hashTable
     CHK_STATUS(hashTableCreateWithParams(JITTER_BUFFER_HASH_TABLE_BUCKET_COUNT, JITTER_BUFFER_HASH_TABLE_BUCKET_LENGTH,
                                          &pJitterBuffer->pPkgBufferHashTable));
 
@@ -56,6 +66,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收JitterBuffer 资源
 STATUS freeJitterBuffer(PJitterBuffer* ppJitterBuffer)
 {
     ENTERS();
@@ -69,10 +80,13 @@ STATUS freeJitterBuffer(PJitterBuffer* ppJitterBuffer)
 
     pJitterBuffer = *ppJitterBuffer;
 
+    // 
     jitterBufferInternalParse(pJitterBuffer, TRUE);
+    // 丢弃JitterBuffer数据
     jitterBufferDropBufferData(pJitterBuffer, 0, MAX_SEQUENCE_NUM, 0);
     hashTableFree(pJitterBuffer->pPkgBufferHashTable);
 
+    // 回收JitterBuffer资源
     SAFE_MEMFREE(*ppJitterBuffer);
 
 CleanUp:
@@ -82,6 +96,7 @@ CleanUp:
     return retStatus;
 }
 
+// JitterBuffer Push RtpPacket
 STATUS jitterBufferPush(PJitterBuffer pJitterBuffer, PRtpPacket pRtpPacket, PBOOL pPacketDiscarded)
 {
     ENTERS();
@@ -94,6 +109,7 @@ STATUS jitterBufferPush(PJitterBuffer pJitterBuffer, PRtpPacket pRtpPacket, PBOO
     if (!pJitterBuffer->started) {
         // Set to started and initialize the sequence number
         pJitterBuffer->started = TRUE;
+        // 设置序列号
         pJitterBuffer->headSequenceNumber = pRtpPacket->header.sequenceNumber;
         pJitterBuffer->headTimestamp = pRtpPacket->header.timestamp;
     }
@@ -105,13 +121,16 @@ STATUS jitterBufferPush(PJitterBuffer pJitterBuffer, PRtpPacket pRtpPacket, PBOO
     // is the packet within the accepted latency range, if so, add it to the hashtable
     if ((pRtpPacket->header.timestamp < pJitterBuffer->maxLatency && pJitterBuffer->lastPushTimestamp <= pJitterBuffer->maxLatency) ||
         pRtpPacket->header.timestamp >= pJitterBuffer->lastPushTimestamp - pJitterBuffer->maxLatency) {
+        // 根据对应序列号 从hashTable 取出RtpPacket
         status = hashTableGet(pJitterBuffer->pPkgBufferHashTable, pRtpPacket->header.sequenceNumber, &hashValue);
         pCurPacket = (PRtpPacket) hashValue;
+        // 移除RtpPacket
         if (STATUS_SUCCEEDED(status) && pCurPacket != NULL) {
             freeRtpPacket(&pCurPacket);
             CHK_STATUS(hashTableRemove(pJitterBuffer->pPkgBufferHashTable, pRtpPacket->header.sequenceNumber));
         }
 
+        // 设置新的RtpPacket
         CHK_STATUS(hashTablePut(pJitterBuffer->pPkgBufferHashTable, pRtpPacket->header.sequenceNumber, (UINT64) pRtpPacket));
 
         /*If we haven't yet processed a frame yet, then we don't have a definitive way of knowing if
@@ -130,11 +149,13 @@ STATUS jitterBufferPush(PJitterBuffer pJitterBuffer, PRtpPacket pRtpPacket, PBOO
          */
         if (!(pJitterBuffer->firstFrameProcessed)) {
             // if the timestamp is less, we'll accept it as a new head, since it must be an earlier frame.
+            // 更新头序列号、头时间戳
             if (pRtpPacket->header.timestamp < pJitterBuffer->headTimestamp) {
                 pJitterBuffer->headSequenceNumber = pRtpPacket->header.sequenceNumber;
                 pJitterBuffer->headTimestamp = pRtpPacket->header.timestamp;
             }
             // timestamp is equal, we're in the same frame.
+            // 同一帧
             else if (pRtpPacket->header.timestamp == pJitterBuffer->headTimestamp) {
                 if (pJitterBuffer->headSequenceNumber < MAX_OUT_OF_ORDER_PACKET_DIFFERENCE) {
                     if ((pRtpPacket->header.sequenceNumber >=
@@ -298,6 +319,7 @@ CleanUp:
     return retStatus;
 }
 
+// JitterBuffer 清理数据(startIndex ~ endIndex)
 // Remove all packets containing sequence numbers between and including the startIndex and endIndex for the JitterBuffer.
 // The nextTimestamp is assumed to be the timestamp of the next earliest Frame
 STATUS jitterBufferDropBufferData(PJitterBuffer pJitterBuffer, UINT16 startIndex, UINT16 endIndex, UINT32 nextTimestamp)
@@ -310,6 +332,7 @@ STATUS jitterBufferDropBufferData(PJitterBuffer pJitterBuffer, UINT16 startIndex
     BOOL hasEntry = FALSE;
 
     CHK(pJitterBuffer != NULL, STATUS_NULL_ARG);
+    // 移除startIndex ~ endIndex范围的RtpPacket
     for (; UINT16_DEC(index) != endIndex; index++) {
         CHK_STATUS(hashTableContains(pJitterBuffer->pPkgBufferHashTable, index, &hasEntry));
         if (hasEntry) {
@@ -329,6 +352,7 @@ CleanUp:
     return retStatus;
 }
 
+// 放弃RtpPacket (startIndex ~ endIndex)
 // Depay all packets containing sequence numbers between and including the startIndex and endIndex for the JitterBuffer.
 STATUS jitterBufferFillFrameData(PJitterBuffer pJitterBuffer, PBYTE pFrame, UINT32 frameSize, PUINT32 pFilledSize, UINT16 startIndex, UINT16 endIndex)
 {
@@ -353,6 +377,7 @@ STATUS jitterBufferFillFrameData(PJitterBuffer pJitterBuffer, PBYTE pFrame, UINT
         }
         CHK(pCurPacket != NULL, STATUS_NULL_ARG);
         partialFrameSize = remainingFrameSize;
+        // 
         CHK_STATUS(pJitterBuffer->depayPayloadFn(pCurPacket->payload, pCurPacket->payloadLength, pCurPtrInFrame, &partialFrameSize, NULL));
         pCurPtrInFrame += partialFrameSize;
         remainingFrameSize -= partialFrameSize;

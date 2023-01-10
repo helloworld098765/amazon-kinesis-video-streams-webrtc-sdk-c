@@ -28,11 +28,11 @@ typedef struct {
     UINT64 transit;
     // holds estimated jitter, in clockRate units
     DOUBLE jitter;
-    UINT32 lastPushTimestamp;
-    UINT16 headSequenceNumber;
-    UINT32 headTimestamp;
-    UINT64 maxLatency;
-    UINT64 customData;
+    UINT32 lastPushTimestamp;   // 最后push 时间
+    UINT16 headSequenceNumber;  //头 序列号
+    UINT32 headTimestamp;       //头 时间
+    UINT64 maxLatency;          // 最大延迟
+    UINT64 customData;          // 数据
     UINT32 clockRate;
     BOOL started;
     BOOL firstFrameProcessed;

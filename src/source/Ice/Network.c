@@ -4,6 +4,7 @@
 #define LOG_CLASS "Network"
 #include "../Include_i.h"
 
+// 获取本地IpAddress
 STATUS getLocalhostIpAddresses(PKvsIpAddress destIpList, PUINT32 pDestIpListLen, IceSetInterfaceFilterFunc filter, UINT64 customData)
 {
     ENTERS();
@@ -82,6 +83,7 @@ STATUS getLocalhostIpAddresses(PKvsIpAddress destIpList, PUINT32 pDestIpListLen,
     }
 #else
     CHK(getifaddrs(&ifaddr) != -1, STATUS_GET_LOCAL_IP_ADDRESSES_FAILED);
+
     for (ifa = ifaddr; ifa != NULL && ipCount < destIpListLen; ifa = ifa->ifa_next) {
         if (ifa->ifa_addr != NULL && (ifa->ifa_flags & IFF_LOOPBACK) == 0 && // ignore loopback interface
             (ifa->ifa_flags & IFF_RUNNING) > 0 &&                            // interface has to be allocated
@@ -91,6 +93,7 @@ STATUS getLocalhostIpAddresses(PKvsIpAddress destIpList, PUINT32 pDestIpListLen,
 
             if (filter != NULL) {
                 // The callback evaluates to a FALSE if the application is interested in black listing an interface
+                // 使用过滤函数，过滤接口
                 if (filter(customData, ifa->ifa_name) == FALSE) {
                     filterSet = FALSE;
                 } else {
@@ -98,6 +101,7 @@ STATUS getLocalhostIpAddresses(PKvsIpAddress destIpList, PUINT32 pDestIpListLen,
                 }
             }
 
+            // 若过滤通过，需收集interface的详细信息
             // If filter is set, ensure the details are collected for the interface
             if (filterSet == TRUE) {
                 if (ifa->ifa_addr->sa_family == AF_INET) {
@@ -147,6 +151,7 @@ CleanUp:
     return retStatus;
 }
 
+// 创建socket
 STATUS createSocket(KVS_IP_FAMILY_TYPE familyType, KVS_SOCKET_PROTOCOL protocol, UINT32 sendBufSize, PINT32 pOutSockFd)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -201,6 +206,7 @@ CleanUp:
     return retStatus;
 }
 
+// 关闭socket
 STATUS closeSocket(INT32 sockfd)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -216,6 +222,7 @@ CleanUp:
     return retStatus;
 }
 
+// 绑定socket
 STATUS socketBind(PKvsIpAddress pHostIpAddress, INT32 sockfd)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -228,6 +235,7 @@ STATUS socketBind(PKvsIpAddress pHostIpAddress, INT32 sockfd)
 
     CHK(pHostIpAddress != NULL, STATUS_NULL_ARG);
 
+    // ipv4
     if (pHostIpAddress->family == KVS_IP_FAMILY_TYPE_IPV4) {
         MEMSET(&ipv4Addr, 0x00, SIZEOF(ipv4Addr));
         ipv4Addr.sin_family = AF_INET;
@@ -238,7 +246,9 @@ STATUS socketBind(PKvsIpAddress pHostIpAddress, INT32 sockfd)
         sockAddr = (struct sockaddr*) &ipv4Addr;
         addrLen = SIZEOF(struct sockaddr_in);
 
-    } else {
+    }
+    // ipv6
+    else {
         MEMSET(&ipv6Addr, 0x00, SIZEOF(ipv6Addr));
         ipv6Addr.sin6_family = AF_INET6;
         ipv6Addr.sin6_port = 0; // use next available port
@@ -267,6 +277,7 @@ CleanUp:
     return retStatus;
 }
 
+// 连接socket
 STATUS socketConnect(PKvsIpAddress pPeerAddress, INT32 sockfd)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -278,6 +289,7 @@ STATUS socketConnect(PKvsIpAddress pPeerAddress, INT32 sockfd)
 
     CHK(pPeerAddress != NULL, STATUS_NULL_ARG);
 
+    // ipv4
     if (pPeerAddress->family == KVS_IP_FAMILY_TYPE_IPV4) {
         MEMSET(&ipv4PeerAddr, 0x00, SIZEOF(ipv4PeerAddr));
         ipv4PeerAddr.sin_family = AF_INET;
@@ -285,7 +297,9 @@ STATUS socketConnect(PKvsIpAddress pPeerAddress, INT32 sockfd)
         MEMCPY(&ipv4PeerAddr.sin_addr, pPeerAddress->address, IPV4_ADDRESS_LENGTH);
         peerSockAddr = (struct sockaddr*) &ipv4PeerAddr;
         addrLen = SIZEOF(struct sockaddr_in);
-    } else {
+    }
+    // ipv6
+    else {
         MEMSET(&ipv6PeerAddr, 0x00, SIZEOF(ipv6PeerAddr));
         ipv6PeerAddr.sin6_family = AF_INET6;
         ipv6PeerAddr.sin6_port = pPeerAddress->port;
@@ -302,6 +316,7 @@ CleanUp:
     return retStatus;
 }
 
+// 通过hostname获取IPAddress
 STATUS getIpWithHostName(PCHAR hostname, PKvsIpAddress destIp)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -321,12 +336,15 @@ STATUS getIpWithHostName(PCHAR hostname, PKvsIpAddress destIp)
     }
 
     for (rp = res; rp != NULL && !resolved; rp = rp->ai_next) {
+        // ipv4
         if (rp->ai_family == AF_INET) {
             ipv4Addr = (struct sockaddr_in*) rp->ai_addr;
             destIp->family = KVS_IP_FAMILY_TYPE_IPV4;
             MEMCPY(destIp->address, &ipv4Addr->sin_addr, IPV4_ADDRESS_LENGTH);
             resolved = TRUE;
-        } else if (rp->ai_family == AF_INET6) {
+        }
+        // ipv6
+        else if (rp->ai_family == AF_INET6) {
             ipv6Addr = (struct sockaddr_in6*) rp->ai_addr;
             destIp->family = KVS_IP_FAMILY_TYPE_IPV6;
             MEMCPY(destIp->address, &ipv6Addr->sin6_addr, IPV6_ADDRESS_LENGTH);
@@ -344,6 +362,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取IpAddress 字符串
 STATUS getIpAddrStr(PKvsIpAddress pKvsIpAddress, PCHAR pBuffer, UINT32 bufferLen)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -352,10 +371,13 @@ STATUS getIpAddrStr(PKvsIpAddress pKvsIpAddress, PCHAR pBuffer, UINT32 bufferLen
     CHK(pKvsIpAddress != NULL, STATUS_NULL_ARG);
     CHK(pBuffer != NULL && bufferLen > 0, STATUS_INVALID_ARG);
 
+    // ipv4
     if (IS_IPV4_ADDR(pKvsIpAddress)) {
         generatedStrLen = SNPRINTF(pBuffer, bufferLen, "%u.%u.%u.%u", pKvsIpAddress->address[0], pKvsIpAddress->address[1], pKvsIpAddress->address[2],
                                    pKvsIpAddress->address[3]);
-    } else {
+    }
+    // ipv6
+    else {
         generatedStrLen = SNPRINTF(pBuffer, bufferLen, "%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
                                    pKvsIpAddress->address[0], pKvsIpAddress->address[1], pKvsIpAddress->address[2], pKvsIpAddress->address[3],
                                    pKvsIpAddress->address[4], pKvsIpAddress->address[5], pKvsIpAddress->address[6], pKvsIpAddress->address[7],
@@ -371,6 +393,7 @@ CleanUp:
     return retStatus;
 }
 
+// 判断两个IpAddress是否相等
 BOOL isSameIpAddress(PKvsIpAddress pAddr1, PKvsIpAddress pAddr2, BOOL checkPort)
 {
     BOOL ret;
@@ -380,6 +403,7 @@ BOOL isSameIpAddress(PKvsIpAddress pAddr1, PKvsIpAddress pAddr2, BOOL checkPort)
         return FALSE;
     }
 
+    // ipv4 or ipv6
     addrLen = IS_IPV4_ADDR(pAddr1) ? IPV4_ADDRESS_LENGTH : IPV6_ADDRESS_LENGTH;
 
     ret =

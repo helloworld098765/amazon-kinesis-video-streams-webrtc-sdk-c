@@ -15,14 +15,20 @@ extern "C" {
 
 #define RTCP_PACKET_RRC_BITMASK 0x1F
 
+// RTCP 头4字节
 #define RTCP_PACKET_HEADER_LEN 4
 #define RTCP_NACK_LIST_LEN     8
 
+// RTCP 版本，固定2
 #define RTCP_PACKET_VERSION_VAL 2
 
 #define RTCP_PACKET_LEN_WORD_SIZE 4
 
+// RTCP REMB最小大小
 #define RTCP_PACKET_REMB_MIN_SIZE          16
+//  V = 2bits    P = 1bit    FMT = 5bits     PT = 8bits  length = 16bits
+//  SSRC of packet sender = 32bits
+//  SSRC of media source = 32bits
 #define RTCP_PACKET_REMB_IDENTIFIER_OFFSET 8
 #define RTCP_PACKET_REMB_MANTISSA_BITMASK  0x3FFFF
 
@@ -103,7 +109,12 @@ STATUS rtcpNackListGet(PBYTE, UINT32, PUINT32, PUINT32, PUINT16, PUINT32);
 STATUS rembValueGet(PBYTE, UINT32, PDOUBLE, PUINT32, PUINT8);
 STATUS isRembPacket(PBYTE, UINT32);
 
+// 一个是两个时期之间的偏移量。
+// Unix 使用位于 1/1/1970-00:00h (UTC) 的纪元，NTP 使用 1/1/1900-00:00h。
+// 这导致偏移量相当于 70 年（以秒为单位）（两个日期之间有 17 个闰年，因此偏移量为
+// (70*365 + 17)*86400 = 2208988800
 #define NTP_OFFSET    2208988800ULL
+// 0xffff ffff + 1 = 2 ^ 32
 #define NTP_TIMESCALE 4294967296ULL
 
 // converts 100ns precision time to ntp time
