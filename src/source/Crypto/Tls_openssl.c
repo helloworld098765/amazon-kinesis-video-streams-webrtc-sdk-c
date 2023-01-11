@@ -4,6 +4,7 @@
 #define LOG_CLASS "TLS_openssl"
 #include "../Include_i.h"
 
+// 创建TlsSession
 STATUS createTlsSession(PTlsSessionCallbacks pCallbacks, PTlsSession* ppTlsSession)
 {
     ENTERS();
@@ -16,6 +17,7 @@ STATUS createTlsSession(PTlsSessionCallbacks pCallbacks, PTlsSession* ppTlsSessi
     pTlsSession = MEMCALLOC(1, SIZEOF(TlsSession));
     CHK(pTlsSession != NULL, STATUS_NOT_ENOUGH_MEMORY);
 
+    // 设置tlsSession 回调、 state
     pTlsSession->callbacks = *pCallbacks;
     pTlsSession->state = TLS_SESSION_STATE_NEW;
 
@@ -32,6 +34,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收TlsSession 资源
 STATUS freeTlsSession(PTlsSession* ppTlsSession)
 {
     ENTERS();
@@ -51,6 +54,7 @@ STATUS freeTlsSession(PTlsSession* ppTlsSession)
         SSL_free(pTlsSession->pSsl);
     }
 
+    // 关闭tlsSession
     retStatus = tlsSessionShutdown(pTlsSession);
     SAFE_MEMFREE(*ppTlsSession);
 
@@ -66,6 +70,7 @@ INT32 tlsSessionCertificateVerifyCallback(INT32 preverify_ok, X509_STORE_CTX* ct
     return 1;
 }
 
+// 启动tlsSession
 STATUS tlsSessionStart(PTlsSession pTlsSession, BOOL isServer)
 {
     ENTERS();
@@ -227,12 +232,15 @@ CleanUp:
     return retStatus;
 }
 
+
+// 关闭tlsSession
 STATUS tlsSessionShutdown(PTlsSession pTlsSession)
 {
     STATUS retStatus = STATUS_SUCCESS;
 
     CHK(pTlsSession != NULL, STATUS_NULL_ARG);
     CHK(pTlsSession->state != TLS_SESSION_STATE_CLOSED, retStatus);
+    // 设置状态closed
     CHK_STATUS(tlsSessionChangeState(pTlsSession, TLS_SESSION_STATE_CLOSED));
 
 CleanUp:

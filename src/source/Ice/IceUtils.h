@@ -28,10 +28,15 @@ extern "C" {
 /**
  * Ring buffer storing transactionIds
  */
+// 事务ID Store
 typedef struct {
+    // 最大事务ID数量
     UINT32 maxTransactionIdsCount;
+    // 下一个事务ID索引
     UINT32 nextTransactionIdIndex;
+    // 最早事务ID索引
     UINT32 earliestTransactionIdIndex;
+    // 事务ID 计数
     UINT32 transactionIdCount;
     PBYTE transactionIds;
 } TransactionIdStore, *PTransactionIdStore;

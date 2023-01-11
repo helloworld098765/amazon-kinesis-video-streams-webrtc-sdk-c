@@ -63,6 +63,8 @@ CleanUp:
     return retStatus;
 }
 
+
+// 写入IOBuffer
 STATUS ioBufferWrite(PIOBuffer pBuffer, PBYTE pData, UINT32 dataLen)
 {
     STATUS retStatus = STATUS_SUCCESS;

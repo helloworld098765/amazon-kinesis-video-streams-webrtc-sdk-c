@@ -1,6 +1,7 @@
 #define LOG_CLASS "Crypto"
 #include "../Include_i.h"
 
+// 创建证书
 STATUS createRtcCertificate(PRtcCertificate* ppRtcCertificate)
 {
     ENTERS();
@@ -40,6 +41,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收证书资源
 STATUS freeRtcCertificate(PRtcCertificate pRtcCertificate)
 {
     ENTERS();
