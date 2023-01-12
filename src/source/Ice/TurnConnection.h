@@ -11,36 +11,63 @@ extern "C" {
 #endif
 
 // https://en.wikipedia.org/wiki/List_of_IP_protocol_numbers
+// udp 协议
 #define TURN_REQUEST_TRANSPORT_UDP               17
+// tcp 协议
 #define TURN_REQUEST_TRANSPORT_TCP               6
+// allocation 存活时间
 #define DEFAULT_TURN_ALLOCATION_LIFETIME_SECONDS 600
 // required by rfc5766 to be 300s
+
+// 许可存活时间
 #define TURN_PERMISSION_LIFETIME                 (300 * HUNDREDS_OF_NANOS_IN_A_SECOND)
 #define DEFAULT_TURN_TIMER_INTERVAL_BEFORE_READY (50 * HUNDREDS_OF_NANOS_IN_A_MILLISECOND)
 #define DEFAULT_TURN_TIMER_INTERVAL_AFTER_READY  (1 * HUNDREDS_OF_NANOS_IN_A_SECOND)
 #define DEFAULT_TURN_SEND_REFRESH_INVERVAL       (1 * HUNDREDS_OF_NANOS_IN_A_SECOND)
 
 // turn state timeouts
+// socket连接超时时间
 #define DEFAULT_TURN_SOCKET_CONNECT_TIMEOUT    (5 * HUNDREDS_OF_NANOS_IN_A_SECOND)
+// 获取
 #define DEFAULT_TURN_GET_CREDENTIAL_TIMEOUT    (5 * HUNDREDS_OF_NANOS_IN_A_SECOND)
+// 获取
 #define DEFAULT_TURN_ALLOCATION_TIMEOUT        (5 * HUNDREDS_OF_NANOS_IN_A_SECOND)
+// 创建许可超时时间
 #define DEFAULT_TURN_CREATE_PERMISSION_TIMEOUT (2 * HUNDREDS_OF_NANOS_IN_A_SECOND)
+// 绑定DataChannel超时时间
 #define DEFAULT_TURN_BIND_CHANNEL_TIMEOUT      (3 * HUNDREDS_OF_NANOS_IN_A_SECOND)
+
+// 清理超时时间
 #define DEFAULT_TURN_CLEAN_UP_TIMEOUT          (10 * HUNDREDS_OF_NANOS_IN_A_SECOND)
 
+// allocation 刷新周期
 #define DEFAULT_TURN_ALLOCATION_REFRESH_GRACE_PERIOD (30 * HUNDREDS_OF_NANOS_IN_A_SECOND)
+// 许可刷新周期
 #define DEFAULT_TURN_PERMISSION_REFRESH_GRACE_PERIOD (30 * HUNDREDS_OF_NANOS_IN_A_SECOND)
 
+// Channel Data Message 最大值
 #define MAX_TURN_CHANNEL_DATA_MESSAGE_SIZE                4 + 65536 /* header + data */
+
+// 发送数据Buffer 大小
 #define DEFAULT_TURN_MESSAGE_SEND_CHANNEL_DATA_BUFFER_LEN MAX_TURN_CHANNEL_DATA_MESSAGE_SIZE
+// 接受数据Buffer 大小
 #define DEFAULT_TURN_MESSAGE_RECV_CHANNEL_DATA_BUFFER_LEN MAX_TURN_CHANNEL_DATA_MESSAGE_SIZE
+// 
 #define DEFAULT_TURN_CHANNEL_DATA_BUFFER_SIZE             512
+// 最大peer数量
 #define DEFAULT_TURN_MAX_PEER_COUNT                       32
 
 // all turn channel numbers must be greater than 0x4000 and less than 0x7FFF
+// 0x0000 ~ 0x3FFF 永远不用于channel number
+// 0x4000 ~ 0x7FFF (16383个)用于channel number
+// 0x8000 ~ 0xFFFF 保留，将来使用
+
+// 2字节channel number 必须大于0x4000 小于 0x7fff
 #define TURN_CHANNEL_BIND_CHANNEL_NUMBER_BASE (UINT16) 0x4000
 
 // 2 byte channel number 2 data byte size
+// 4字节开销
+// 3~4字节表示数据长度，不包含头，0 为有效长度
 #define TURN_DATA_CHANNEL_SEND_OVERHEAD  4
 #define TURN_DATA_CHANNEL_MSG_FIRST_BYTE 0x40
 
