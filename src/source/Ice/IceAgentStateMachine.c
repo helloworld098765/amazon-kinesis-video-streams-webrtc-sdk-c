@@ -29,6 +29,8 @@ StateMachineState ICE_AGENT_STATE_MACHINE_STATES[] = {
 
 UINT32 ICE_AGENT_STATE_MACHINE_STATE_COUNT = ARRAY_SIZE(ICE_AGENT_STATE_MACHINE_STATES);
 
+
+// 
 STATUS stepIceAgentStateMachine(PIceAgent pIceAgent)
 {
     ENTERS();
@@ -65,6 +67,7 @@ CleanUp:
     return retStatus;
 }
 
+// 步入Ice Agent状态机
 STATUS acceptIceAgentMachineState(PIceAgent pIceAgent, UINT64 state)
 {
     ENTERS();
@@ -73,14 +76,17 @@ STATUS acceptIceAgentMachineState(PIceAgent pIceAgent, UINT64 state)
 
     CHK(pIceAgent != NULL, STATUS_NULL_ARG);
 
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     locked = TRUE;
 
     // Step the state machine
+    // 步入状态机
     CHK_STATUS(acceptStateMachineState(pIceAgent->pStateMachine, state));
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
@@ -124,6 +130,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取对应IceAgent 状态对应字符串
 PCHAR iceAgentStateToString(UINT64 state)
 {
     PCHAR stateStr = NULL;
@@ -180,6 +187,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置ICE_AGENT_STATE_NEW 状态
 STATUS executeNewIceAgentState(UINT64 customData, UINT64 time)
 {
     ENTERS();
@@ -261,6 +269,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置ICE_AGENT_STATE_CHECK_CONNECTION 状态
 STATUS executeCheckConnectionIceAgentState(UINT64 customData, UINT64 time)
 {
     ENTERS();
@@ -333,6 +342,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置ICE_AGENT_STATE_CONNECTED 状态
 STATUS executeConnectedIceAgentState(UINT64 customData, UINT64 time)
 {
     ENTERS();
@@ -421,6 +431,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置ICE_AGENT_STATE_NOMINATING 状态
 STATUS executeNominatingIceAgentState(UINT64 customData, UINT64 time)
 {
     ENTERS();
@@ -516,6 +527,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置ICE_AGENT_STATE_READY 状态
 STATUS executeReadyIceAgentState(UINT64 customData, UINT64 time)
 {
     ENTERS();
@@ -580,6 +592,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置ICE_AGENT_STATE_DISCONNECTED 状态
 STATUS executeDisconnectedIceAgentState(UINT64 customData, UINT64 time)
 {
     ENTERS();
@@ -637,6 +650,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置ICE_AGENT_STATE_FAILED状态
 STATUS executeFailedIceAgentState(UINT64 customData, UINT64 time)
 {
     ENTERS();

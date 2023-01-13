@@ -84,57 +84,81 @@ extern "C" {
 
 typedef STATUS (*RelayAddressAvailableFunc)(UINT64, PKvsIpAddress, PSocketConnection);
 
+// Turn 连接状态
 typedef enum {
+    // 新建
     TURN_STATE_NEW,
+    // 检查socket 连接
     TURN_STATE_CHECK_SOCKET_CONNECTION,
+    // 获取凭证
     TURN_STATE_GET_CREDENTIALS,
+    // allocation
     TURN_STATE_ALLOCATION,
+    // 创建许可
     TURN_STATE_CREATE_PERMISSION,
+    // 绑定DataChannel
     TURN_STATE_BIND_CHANNEL,
+    // 就绪
     TURN_STATE_READY,
+    // 清理
     TURN_STATE_CLEAN_UP,
+    // 错误
     TURN_STATE_FAILED,
 } TURN_CONNECTION_STATE;
 
+// Turn 对端连接状态
 typedef enum {
+    // 创建许可
     TURN_PEER_CONN_STATE_CREATE_PERMISSION,
+    // 绑定DataChannel
     TURN_PEER_CONN_STATE_BIND_CHANNEL,
+    // 就绪
     TURN_PEER_CONN_STATE_READY,
+    // 错误
     TURN_PEER_CONN_STATE_FAILED,
 } TURN_PEER_CONNECTION_STATE;
 
+// Turn 数据发送模式
 typedef enum {
+    // 通过send indidation 开销较大， 36字节开销
     TURN_CONNECTION_DATA_TRANSFER_MODE_SEND_INDIDATION,
+    // 通过DataChannel, 开销较小4字节头
+    // channel number 2bytes
+    // length 2bytes
     TURN_CONNECTION_DATA_TRANSFER_MODE_DATA_CHANNEL,
 } TURN_CONNECTION_DATA_TRANSFER_MODE;
 
+// Turn DataChannelData
 typedef struct {
     PBYTE data;
     UINT32 size;
     KvsIpAddress senderAddr;
 } TurnChannelData, *PTurnChannelData;
 
+// turn 连接回调
 typedef struct {
     UINT64 customData;
-    RelayAddressAvailableFunc relayAddressAvailableFn;
+    RelayAddressAvailableFunc relayAddressAvailableFn;  //中继地址可用回调
 } TurnConnectionCallbacks, *PTurnConnectionCallbacks;
 
+// Turn Peer
 typedef struct {
     KvsIpAddress address;
-    KvsIpAddress xorAddress;
+    KvsIpAddress xorAddress;    // Turn 服务器看到的对端地址
     /*
      * Steps to create a turn channel for a peer:
      *     - create permission
      *     - channel bind
      *     - ready to send data
      */
-    TURN_PEER_CONNECTION_STATE connectionState;
-    PTransactionIdStore pTransactionIdStore;
+    TURN_PEER_CONNECTION_STATE connectionState; // 连接状态
+    PTransactionIdStore pTransactionIdStore;    // 事务ID Store
     UINT16 channelNumber;
-    UINT64 permissionExpirationTime;
+    UINT64 permissionExpirationTime;    // 许可过期时间
     BOOL ready;
 } TurnPeer, *PTurnPeer;
 
+// Turn 连接
 typedef struct __TurnConnection TurnConnection;
 struct __TurnConnection {
     volatile ATOMIC_BOOL stopTurnConnection;
@@ -144,7 +168,10 @@ struct __TurnConnection {
     volatile SIZE_T timerCallbackId;
 
     // realm attribute in Allocation response
+    // 一个字符串，用于描述服务器或服务器中的一个上下文。
+    // 告诉客户端哪一个用户名和密码组合来验证请求。
     CHAR turnRealm[STUN_MAX_REALM_LEN + 1];
+    // 一个由服务器随机选择的字符串，包含在信息加密。  为了防止重放攻击，服务器应定期改变nonce
     BYTE turnNonce[STUN_MAX_NONCE_LEN];
     UINT16 nonceLen;
     BYTE longTermKey[KVS_MD5_DIGEST_LENGTH];
@@ -153,6 +180,7 @@ struct __TurnConnection {
 
     PSocketConnection pControlChannel;
 
+    // Turn PeerList
     TurnPeer turnPeerList[DEFAULT_TURN_MAX_PEER_COUNT];
     UINT32 turnPeerCount;
 
@@ -171,12 +199,16 @@ struct __TurnConnection {
     STATUS errorStatus;
 
     PStunPacket pTurnPacket;
+    // 许可
     PStunPacket pTurnCreatePermissionPacket;
+    // DataChannel
     PStunPacket pTurnChannelBindPacket;
+    // Allocation Refresh
     PStunPacket pTurnAllocationRefreshPacket;
 
     KvsIpAddress hostAddress;
 
+    // 中继地址
     KvsIpAddress relayAddress;
 
     PConnectionListener pConnectionListener;
@@ -186,17 +218,22 @@ struct __TurnConnection {
 
     TurnConnectionCallbacks turnConnectionCallbacks;
 
+    // 发送数据Buffer
     PBYTE sendDataBuffer;
     UINT32 dataBufferSize;
 
+    // 接收数据Buffer
     PBYTE recvDataBuffer;
     UINT32 recvDataBufferSize;
     UINT32 currRecvDataLen;
     // when a complete channel data have been assembled in recvDataBuffer, move it to completeChannelDataBuffer
     // to make room for subsequent partial channel data.
+    // 当一个完整的channel data在recvDataBuffer中时，将其移至completeChannelDataBuffer
     PBYTE completeChannelDataBuffer;
 
+    // allocation 过期时间
     UINT64 allocationExpirationTime;
+    // 下一次刷新allocation时间
     UINT64 nextAllocationRefreshTime;
 
     UINT64 currentTimerCallingPeriod;

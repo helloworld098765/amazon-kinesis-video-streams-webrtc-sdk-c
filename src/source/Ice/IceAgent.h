@@ -10,21 +10,32 @@ IceAgent internal include file
 extern "C" {
 #endif
 
+// 候选对最大数量
 #define KVS_ICE_MAX_CANDIDATE_PAIR_COUNT                       1024
+// 远程候选最大数量
 #define KVS_ICE_MAX_REMOTE_CANDIDATE_COUNT                     100
+// 本地候选最大数量
 #define KVS_ICE_MAX_LOCAL_CANDIDATE_COUNT                      100
+// 收集reflexive relayed 候选人超时时间
 #define KVS_ICE_GATHER_REFLEXIVE_AND_RELAYED_CANDIDATE_TIMEOUT (10 * HUNDREDS_OF_NANOS_IN_A_SECOND)
+// 连通性检查超时时间
 #define KVS_ICE_CONNECTIVITY_CHECK_TIMEOUT                     (10 * HUNDREDS_OF_NANOS_IN_A_SECOND)
+// 
 #define KVS_ICE_CANDIDATE_NOMINATION_TIMEOUT                   (10 * HUNDREDS_OF_NANOS_IN_A_SECOND)
 #define KVS_ICE_SEND_KEEP_ALIVE_INTERVAL                       (15 * HUNDREDS_OF_NANOS_IN_A_SECOND)
+// turn connection关闭超时时间
 #define KVS_ICE_TURN_CONNECTION_SHUTDOWN_TIMEOUT               (1 * HUNDREDS_OF_NANOS_IN_A_SECOND)
+// 定时器启动延迟
 #define KVS_ICE_DEFAULT_TIMER_START_DELAY                      (3 * HUNDREDS_OF_NANOS_IN_A_MILLISECOND)
 #define KVS_ICE_SHORT_CHECK_DELAY                              (50 * HUNDREDS_OF_NANOS_IN_A_MILLISECOND)
 
 // Ta in https://tools.ietf.org/html/rfc8445
+// 连接检查轮询间隔
 #define KVS_ICE_CONNECTION_CHECK_POLLING_INTERVAL  (50 * HUNDREDS_OF_NANOS_IN_A_MILLISECOND)
+// 
 #define KVS_ICE_STATE_READY_TIMER_POLLING_INTERVAL (1 * HUNDREDS_OF_NANOS_IN_A_SECOND)
 /* Control the calling rate of iceCandidateGatheringTimerTask. Can affect STUN TURN candidate gathering time */
+// 收集候选定时器 轮询间隔
 #define KVS_ICE_GATHER_CANDIDATE_TIMER_POLLING_INTERVAL (50 * HUNDREDS_OF_NANOS_IN_A_MILLISECOND)
 
 /* ICE should've received at least one keep alive within this period. Since keep alives are send every 15s */
@@ -33,6 +44,7 @@ extern "C" {
 
 #define STUN_HEADER_MAGIC_BYTE_OFFSET 4
 
+// 最大中继数量
 #define KVS_ICE_MAX_RELAY_CANDIDATE_COUNT                  4
 #define KVS_ICE_MAX_NEW_LOCAL_CANDIDATES_TO_REPORT_AT_ONCE 10
 
@@ -43,7 +55,9 @@ extern "C" {
 #define ICE_PRIORITY_RELAYED_CANDIDATE_TYPE_PREFERENCE          0
 #define ICE_PRIORITY_LOCAL_PREFERENCE                           65535
 
+// 判断是否是STUN Packet,(5-8)字节 == 0x2112A442
 #define IS_STUN_PACKET(pBuf)       (getInt32(*(PUINT32) ((pBuf) + STUN_HEADER_MAGIC_BYTE_OFFSET)) == STUN_HEADER_MAGIC_COOKIE)
+// 获取STUN Packet 大小
 #define GET_STUN_PACKET_SIZE(pBuf) ((UINT32) getInt16(*(PINT16) ((pBuf) + SIZEOF(UINT16))))
 
 #define IS_CANN_PAIR_SENDING_FROM_RELAYED(p) ((p)->local->iceCandidateType == ICE_CANDIDATE_TYPE_RELAYED)
@@ -72,6 +86,7 @@ typedef struct __IceAgent* PIceAgent;
 /**
  * Internal structure tracking ICE server parameters for diagnostics and metrics/stats
  */
+// RtcIceServer 诊断信息
 typedef struct {
     CHAR url[MAX_STATS_STRING_LENGTH + 1];      //!< STUN/TURN server URL
     CHAR protocol[MAX_STATS_STRING_LENGTH + 1]; //!< Valid values: UDP, TCP
@@ -81,6 +96,7 @@ typedef struct {
     UINT64 totalRoundTripTime;                  //!< Sum of RTTs of all the requests for which response has been received
 } RtcIceServerDiagnostics, *PRtcIceServerDiagnostics;
 
+// RtcIceCandidate诊断信息
 typedef struct {
     DOMString url; //!< For local candidates this is the URL of the ICE server from which the candidate was obtained
     DOMString transportId[MAX_STATS_STRING_LENGTH + 1]; //!< ID of object that was inspected for RTCTransportStats
@@ -93,6 +109,8 @@ typedef struct {
     DOMString candidateType;                            //!< Type of local/remote ICE candidate
 } RtcIceCandidateDiagnostics, *PRtcIceCandidateDiagnostics;
 
+
+// RtcIceCandidatePair 诊断信息
 typedef struct {
     CHAR localCandidateId[MAX_CANDIDATE_ID_LENGTH + 1];  //!< Local candidate that is inspected in RTCIceCandidateStats
     CHAR remoteCandidateId[MAX_CANDIDATE_ID_LENGTH + 1]; //!< Remote candidate that is inspected in RTCIceCandidateStats
@@ -131,13 +149,18 @@ typedef struct {
     UINT64 bytesDiscardedOnSend;     //!< Total number of bytes for this candidate pair discarded due to socket errors
 } RtcIceCandidatePairDiagnostics, *PRtcIceCandidatePairDiagnostics;
 
+// IceAgent 回调
 typedef struct {
     UINT64 customData;
+    // Ice入站Packet回调
     IceInboundPacketFunc inboundPacketFn;
+    // Ice连接状态改变回调
     IceConnectionStateChangedFunc connectionStateChangedFn;
+    // Ice新建LocalCandidate回调
     IceNewLocalCandidateFunc newLocalCandidateFn;
 } IceAgentCallbacks, *PIceAgentCallbacks;
 
+// IceCandidate
 typedef struct {
     ICE_CANDIDATE_TYPE iceCandidateType;
     BOOL isRemote;
@@ -163,6 +186,7 @@ typedef struct {
     KVS_SOCKET_PROTOCOL remoteProtocol;
 } IceCandidate, *PIceCandidate;
 
+// IceCandidatePair
 typedef struct {
     PIceCandidate local;
     PIceCandidate remote;
@@ -178,6 +202,7 @@ typedef struct {
     RtcIceCandidatePairDiagnostics rtcIceCandidatePairDiagnostics;
 } IceCandidatePair, *PIceCandidatePair;
 
+// 
 struct __IceAgent {
     volatile ATOMIC_BOOL agentStartGathering;
     volatile ATOMIC_BOOL remoteCredentialReceived;

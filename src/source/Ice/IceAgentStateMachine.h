@@ -22,15 +22,26 @@ extern "C" {
  * ICE_AGENT_STATE_DISCONNECTED:                Lost connection after ICE_AGENT_STATE_READY
  * ICE_AGENT_STATE_FAILED:                      Terminal state with an error stored in iceAgentStatus
  */
+
+
+// 虚设状态
 #define ICE_AGENT_STATE_NONE             ((UINT64) 0)
+// 新建
 #define ICE_AGENT_STATE_NEW              ((UINT64) (1 << 0))
+// 检查连接
 #define ICE_AGENT_STATE_CHECK_CONNECTION ((UINT64) (1 << 1))
+// 已连接 至少有一个工作候选对
 #define ICE_AGENT_STATE_CONNECTED        ((UINT64) (1 << 2))
+// 等待被提名的候选对的连接性检查成功
 #define ICE_AGENT_STATE_NOMINATING       ((UINT64) (1 << 3))
+// 就绪 选定的候选配对现在是最终的
 #define ICE_AGENT_STATE_READY            ((UINT64) (1 << 4))
+// 在Ready状态后，失去连接
 #define ICE_AGENT_STATE_DISCONNECTED     ((UINT64) (1 << 5))
+// 终端状态有一个错误存储在iceAgentStatus中
 #define ICE_AGENT_STATE_FAILED           ((UINT64) (1 << 6))
 
+// ICE_AGENT 状态对应字符串
 #define ICE_AGENT_STATE_NONE_STR             (PCHAR) "ICE_AGENT_STATE_NONE"
 #define ICE_AGENT_STATE_NEW_STR              (PCHAR) "ICE_AGENT_STATE_NEW"
 #define ICE_AGENT_STATE_CHECK_CONNECTION_STR (PCHAR) "ICE_AGENT_STATE_CHECK_CONNECTION"
