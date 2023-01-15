@@ -6,7 +6,7 @@
  * channelName,role,region,channelARN,httpEndpoint,wssEndpoint,cacheCreationTimestamp\n
  * channelName,role,region,channelARN,httpEndpoint,wssEndpoint,cacheCreationTimestamp\n
  ****************************************************************************************************/
-
+// 创建文件
 STATUS createFileIfNotExist(PCHAR fileName)
 {
     ENTERS();
@@ -24,6 +24,11 @@ CleanUp:
     return retStatus;
 }
 
+//952TFF71E_04,Master,ap-east-1,arn:aws:kinesisvideo:ap-east-1:4122692:channel/952TFF71E_04/1670231767424,https://r-589.kinesisvideo.ap-east-1.amazonaws.com,wss://m-96ec.kinesisvideo.ap-east-1.amazonaws.com,1671005921
+//952TFF71E_01,Master,ap-east-1,arn:aws:kinesisvideo:ap-east-1:4122692:channel/952TFF71E_01/1670384240968,https://r-589.kinesisvideo.ap-east-1.amazonaws.com,wss://m-96ec.kinesisvideo.ap-east-1.amazonaws.com,1671006299
+
+
+// 反序列信令缓存条目
 STATUS deserializeSignalingCacheEntries(PCHAR cachedFileContent, UINT64 fileSize, PSignalingFileCacheEntry pSignalingFileCacheEntryList,
                                         PUINT32 pEntryCount, PCHAR cacheFilePath)
 {
@@ -114,6 +119,7 @@ CleanUp:
     return retStatus;
 }
 
+// 从文件加载信令缓存
 STATUS signalingCacheLoadFromFile(PCHAR channelName, PCHAR region, SIGNALING_CHANNEL_ROLE_TYPE role,
                                   PSignalingFileCacheEntry pSignalingFileCacheEntry, PBOOL pCacheFound, PCHAR cacheFilePath)
 {
@@ -163,6 +169,7 @@ CleanUp:
     return retStatus;
 }
 
+// 将信令缓存保存到文件
 STATUS signalingCacheSaveToFile(PSignalingFileCacheEntry pSignalingFileCacheEntry, PCHAR cacheFilePath)
 {
     ENTERS();
@@ -183,11 +190,13 @@ STATUS signalingCacheSaveToFile(PSignalingFileCacheEntry pSignalingFileCacheEntr
 
     MEMSET(entries, 0x00, SIZEOF(entries));
 
+    // 创建文件
     CHK_STATUS(createFileIfNotExist(cacheFilePath));
 
     /* read entire file into buffer */
     CHK_STATUS(readFile(cacheFilePath, FALSE, NULL, &fileSize));
     /* deserialize if file is not empty */
+    // 文件不为空
     if (fileSize > 0) {
         /* +1 for null terminator */
         fileBuffer = MEMCALLOC(1, (fileSize + 1) * SIZEOF(CHAR));
@@ -199,6 +208,7 @@ STATUS signalingCacheSaveToFile(PSignalingFileCacheEntry pSignalingFileCacheEntr
         entryCount = 0;
     }
 
+    // 检查需要保存的信息是否已经存在
     for (i = 0; pExistingCacheEntry == NULL && i < entryCount; ++i) {
         /* Assume channel name and region has been validated */
         if (STRCMP(entries[i].channelName, pSignalingFileCacheEntry->channelName) == 0 &&
@@ -214,6 +224,7 @@ STATUS signalingCacheSaveToFile(PSignalingFileCacheEntry pSignalingFileCacheEntr
     entries[i] = *pSignalingFileCacheEntry;
     entryCount++;
 
+    // 写入文件
     for (i = 0; i < entryCount; ++i) {
         serializedCacheEntryLen =
             SNPRINTF(serializedCacheEntry, ARRAY_SIZE(serializedCacheEntry), "%s,%s,%s,%s,%s,%s,%.10" PRIu64 "\n", entries[i].channelName,

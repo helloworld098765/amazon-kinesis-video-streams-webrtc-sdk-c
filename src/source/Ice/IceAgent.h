@@ -49,10 +49,22 @@ extern "C" {
 #define KVS_ICE_MAX_NEW_LOCAL_CANDIDATES_TO_REPORT_AT_ONCE 10
 
 // https://tools.ietf.org/html/rfc5245#section-4.1.2.1
+// candidate 类型
+// host
+// srflx
+// prflx
+// relay
+// 优先级自上而下
+
+// host 类型优先级
 #define ICE_PRIORITY_HOST_CANDIDATE_TYPE_PREFERENCE             126
+// srflx 类型优先级
 #define ICE_PRIORITY_SERVER_REFLEXIVE_CANDIDATE_TYPE_PREFERENCE 100
+// prflx 类型优先级
 #define ICE_PRIORITY_PEER_REFLEXIVE_CANDIDATE_TYPE_PREFERENCE   110
+// relay 类型优先级
 #define ICE_PRIORITY_RELAYED_CANDIDATE_TYPE_PREFERENCE          0
+// 本地优先级
 #define ICE_PRIORITY_LOCAL_PREFERENCE                           65535
 
 // 判断是否是STUN Packet,(5-8)字节 == 0x2112A442
