@@ -14,17 +14,28 @@ extern "C" {
  * Signaling states definitions
  */
 #define SIGNALING_STATE_NONE           ((UINT64) 0)
+// 新建
 #define SIGNALING_STATE_NEW            ((UINT64) (1 << 0))
+// 获取token
 #define SIGNALING_STATE_GET_TOKEN      ((UINT64) (1 << 1))
 #define SIGNALING_STATE_DESCRIBE       ((UINT64) (1 << 2))
+// 创建
 #define SIGNALING_STATE_CREATE         ((UINT64) (1 << 3))
+// 获取endpoint
 #define SIGNALING_STATE_GET_ENDPOINT   ((UINT64) (1 << 4))
+// 获取ICE Config
 #define SIGNALING_STATE_GET_ICE_CONFIG ((UINT64) (1 << 5))
+// 就绪
 #define SIGNALING_STATE_READY          ((UINT64) (1 << 6))
+// 连接
 #define SIGNALING_STATE_CONNECT        ((UINT64) (1 << 7))
+// 已连接
 #define SIGNALING_STATE_CONNECTED      ((UINT64) (1 << 8))
+// 连接已断开
 #define SIGNALING_STATE_DISCONNECTED   ((UINT64) (1 << 9))
+// 删除
 #define SIGNALING_STATE_DELETE         ((UINT64) (1 << 10))
+// 已删除
 #define SIGNALING_STATE_DELETED        ((UINT64) (1 << 11))
 
 // Indicates infinite retries

@@ -1,6 +1,7 @@
 #define LOG_CLASS "SignalingClient"
 #include "../Include_i.h"
 
+// 创建重试策略为创建信令客户端
 STATUS createRetryStrategyForCreatingSignalingClient(PSignalingClientInfo pClientInfo, PKvsRetryStrategy pKvsRetryStrategy)
 {
     ENTERS();
@@ -12,8 +13,11 @@ STATUS createRetryStrategyForCreatingSignalingClient(PSignalingClientInfo pClien
         pClientInfo->signalingRetryStrategyCallbacks.freeRetryStrategyFn == NULL ||
         pClientInfo->signalingRetryStrategyCallbacks.executeRetryStrategyFn == NULL) {
         DLOGV("Using exponential backoff retry strategy for creating signaling client");
+        // 设置创建重试函数
         pClientInfo->signalingRetryStrategyCallbacks.createRetryStrategyFn = exponentialBackoffRetryStrategyCreate;
+        // 设置Free重试函数
         pClientInfo->signalingRetryStrategyCallbacks.freeRetryStrategyFn = exponentialBackoffRetryStrategyFree;
+        // 设置执行重试策略函数
         pClientInfo->signalingRetryStrategyCallbacks.executeRetryStrategyFn = getExponentialBackoffRetryStrategyWaitTime;
     }
 
@@ -35,6 +39,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收重试策略资源(创建信令客户端)
 STATUS freeRetryStrategyForCreatingSignalingClient(PSignalingClientInfo pClientInfo, PKvsRetryStrategy pKvsRetryStrategy)
 {
     ENTERS();
@@ -52,6 +57,7 @@ CleanUp:
     return retStatus;
 }
 
+// 创建信令客户端（同步）
 STATUS createSignalingClientSync(PSignalingClientInfo pClientInfo, PChannelInfo pChannelInfo, PSignalingClientCallbacks pCallbacks,
                                  PAwsCredentialProvider pCredentialProvider, PSIGNALING_CLIENT_HANDLE pSignalingHandle)
 {
@@ -70,8 +76,10 @@ STATUS createSignalingClientSync(PSignalingClientInfo pClientInfo, PChannelInfo 
     MEMSET(&signalingClientInfoInternal, 0x00, SIZEOF(signalingClientInfoInternal));
     signalingClientInfoInternal.signalingClientInfo = *pClientInfo;
 
+    // 创建RetryStrategy
     CHK_STATUS(createRetryStrategyForCreatingSignalingClient(pClientInfo, &createSignalingClientRetryStrategy));
 
+    // 设置重试最大次数(create signaling client)
     if (pClientInfo->signalingClientCreationMaxRetryAttempts == CREATE_SIGNALING_CLIENT_RETRY_ATTEMPTS_SENTINEL_VALUE) {
         signalingClientCreationMaxRetryCount = DEFAULT_CREATE_SIGNALING_CLIENT_RETRY_ATTEMPTS;
     } else {
@@ -112,13 +120,14 @@ CleanUp:
     } else {
         *pSignalingHandle = TO_SIGNALING_CLIENT_HANDLE(pSignalingClient);
     }
-
+    // 回收RetryStrategy
     freeRetryStrategyForCreatingSignalingClient(pClientInfo, &createSignalingClientRetryStrategy);
 
     LEAVES();
     return retStatus;
 }
 
+// 回收信令客户端
 STATUS freeSignalingClient(PSIGNALING_CLIENT_HANDLE pSignalingHandle)
 {
     ENTERS();
@@ -142,6 +151,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令客户端发送消息(同步)
 STATUS signalingClientSendMessageSync(SIGNALING_CLIENT_HANDLE signalingClientHandle, PSignalingMessage pSignalingMessage)
 {
     ENTERS();
@@ -159,6 +169,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令客户端连接(同步)
 STATUS signalingClientConnectSync(SIGNALING_CLIENT_HANDLE signalingClientHandle)
 {
     ENTERS();
@@ -238,6 +249,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令客户端断开连接(同步)
 STATUS signalingClientDisconnectSync(SIGNALING_CLIENT_HANDLE signalingClientHandle)
 {
     ENTERS();
@@ -255,6 +267,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令客户端删除（同步）
 STATUS signalingClientDeleteSync(SIGNALING_CLIENT_HANDLE signalingClientHandle)
 {
     ENTERS();
@@ -272,6 +285,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令客户端获取IceConfigInfoCount
 STATUS signalingClientGetIceConfigInfoCount(SIGNALING_CLIENT_HANDLE signalingClientHandle, PUINT32 pIceConfigCount)
 {
     ENTERS();
@@ -289,6 +303,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令客户端获取IceConfigInfo
 STATUS signalingClientGetIceConfigInfo(SIGNALING_CLIENT_HANDLE signalingClientHandle, UINT32 index, PIceConfigInfo* ppIceConfigInfo)
 {
     ENTERS();
@@ -306,6 +321,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令客户端获取当前状态
 STATUS signalingClientGetCurrentState(SIGNALING_CLIENT_HANDLE signalingClientHandle, PSIGNALING_CLIENT_STATE pState)
 {
     ENTERS();
@@ -332,6 +348,8 @@ CleanUp:
     return retStatus;
 }
 
+
+// 信令客户端获取状态对应的字符串
 STATUS signalingClientGetStateString(SIGNALING_CLIENT_STATE state, PCHAR* ppStateStr)
 {
     ENTERS();
@@ -401,6 +419,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令客户端获取指标
 STATUS signalingClientGetMetrics(SIGNALING_CLIENT_HANDLE signalingClientHandle, PSignalingClientMetrics pSignalingClientMetrics)
 {
     ENTERS();

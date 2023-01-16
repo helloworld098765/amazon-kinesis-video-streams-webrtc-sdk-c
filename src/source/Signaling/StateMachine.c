@@ -53,6 +53,7 @@ StateMachineState SIGNALING_STATE_MACHINE_STATES[] = {
 
 UINT32 SIGNALING_STATE_MACHINE_STATE_COUNT = ARRAY_SIZE(SIGNALING_STATE_MACHINE_STATES);
 
+// 
 STATUS defaultSignalingStateTransitionHook(UINT64 customData /* customData should be PSignalingClient */, PUINT64 stateTransitionWaitTime)
 {
     ENTERS();
@@ -66,7 +67,9 @@ STATUS defaultSignalingStateTransitionHook(UINT64 customData /* customData shoul
     pSignalingClient = SIGNALING_CLIENT_FROM_CUSTOM_DATA(customData);
     CHK(pSignalingClient != NULL && stateTransitionWaitTime != NULL, STATUS_NULL_ARG);
 
+    // 策略
     pSignalingStateMachineRetryStrategy = &(pSignalingClient->clientInfo.signalingStateMachineRetryStrategy);
+    // 信令状态机重试策略回调
     pSignalingStateMachineRetryStrategyCallbacks = &(pSignalingClient->clientInfo.signalingStateMachineRetryStrategyCallbacks);
 
     // result > SERVICE_CALL_RESULT_OK covers case for -
@@ -96,6 +99,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令状态机迭代器
 STATUS signalingStateMachineIterator(PSignalingClient pSignalingClient, UINT64 expiration, UINT64 finalState)
 {
     ENTERS();
@@ -105,12 +109,14 @@ STATUS signalingStateMachineIterator(PSignalingClient pSignalingClient, UINT64 e
     PStateMachineState pState = NULL;
     BOOL locked = FALSE;
 
+    // 加锁
     MUTEX_LOCK(pSignalingClient->stateLock);
     locked = TRUE;
 
     while (TRUE) {
         CHK(pSignalingClient != NULL, STATUS_NULL_ARG);
 
+        // 判断信令客户端是否关闭
         CHK(!ATOMIC_LOAD_BOOL(&pSignalingClient->shutdown), retStatus);
 
         if (STATUS_FAILED(retStatus)) {
@@ -120,6 +126,9 @@ STATUS signalingStateMachineIterator(PSignalingClient pSignalingClient, UINT64 e
             }
         }
 
+        // 获取当前时间
+        // 优先使用SignalingClientCallbacks->getCurrentTimeFn
+        // 其次使用GETTIME()
         currentTime = SIGNALING_GET_CURRENT_TIME(pSignalingClient);
 
         CHK(expiration == 0 || currentTime <= expiration, STATUS_OPERATION_TIMED_OUT);
@@ -132,15 +141,17 @@ STATUS signalingStateMachineIterator(PSignalingClient pSignalingClient, UINT64 e
             // Set the call status as auth error
             ATOMIC_STORE(&pSignalingClient->result, (SIZE_T) SERVICE_CALL_NOT_AUTHORIZED);
         }
-
+        // 步进状态机
         retStatus = stepStateMachine(pSignalingClient->pStateMachine);
 
+        // 获取状态机当前状态
         CHK_STATUS(getStateMachineCurrentState(pSignalingClient->pStateMachine, &pState));
         CHK(!(pState->state == finalState), STATUS_SUCCESS);
     }
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSignalingClient->stateLock);
     }
@@ -149,6 +160,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取信令状态，从状态机状态
 SIGNALING_CLIENT_STATE getSignalingStateFromStateMachineState(UINT64 state)
 {
     SIGNALING_CLIENT_STATE clientState;
@@ -199,6 +211,7 @@ SIGNALING_CLIENT_STATE getSignalingStateFromStateMachineState(UINT64 state)
     return clientState;
 }
 
+// 设置状态机状态
 STATUS acceptSignalingStateMachineState(PSignalingClient pSignalingClient, UINT64 state)
 {
     ENTERS();
@@ -207,6 +220,7 @@ STATUS acceptSignalingStateMachineState(PSignalingClient pSignalingClient, UINT6
 
     CHK(pSignalingClient != NULL, STATUS_NULL_ARG);
 
+    // 加锁
     MUTEX_LOCK(pSignalingClient->stateLock);
     locked = TRUE;
 
@@ -215,6 +229,7 @@ STATUS acceptSignalingStateMachineState(PSignalingClient pSignalingClient, UINT6
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSignalingClient->stateLock);
     }

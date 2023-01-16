@@ -4,6 +4,7 @@
 #define LOG_CLASS "Metrics"
 #include "../Include_i.h"
 
+// 获取IceCandidatePair统计
 STATUS getIceCandidatePairStats(PRtcPeerConnection pRtcPeerConnection, PRtcIceCandidatePairStats pRtcIceCandidatePairStats)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -51,6 +52,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取IceCandidate统计
 STATUS getIceCandidateStats(PRtcPeerConnection pRtcPeerConnection, BOOL isRemote, PRtcIceCandidateStats pRtcIceCandidateStats)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -77,6 +79,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取IceServer统计
 STATUS getIceServerStats(PRtcPeerConnection pRtcPeerConnection, PRtcIceServerStats pRtcIceServerStats)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -100,6 +103,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取Transport统计
 STATUS getTransportStats(PRtcPeerConnection pRtcPeerConnection, PRtcTransportStats pRtcTransportStats)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -111,6 +115,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取RtpRemoteInbound统计
 STATUS getRtpRemoteInboundStats(PRtcPeerConnection pRtcPeerConnection, PRtcRtpTransceiver pTransceiver,
                                 PRtcRemoteInboundRtpStreamStats pRtcRemoteInboundRtpStreamStats)
 {
@@ -135,6 +140,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取RtpOutbound统计
 STATUS getRtpOutboundStats(PRtcPeerConnection pRtcPeerConnection, PRtcRtpTransceiver pTransceiver,
                            PRtcOutboundRtpStreamStats pRtcOutboundRtpStreamStats)
 {
@@ -159,6 +165,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取RtpInbound统计
 STATUS getRtpInboundStats(PRtcPeerConnection pRtcPeerConnection, PRtcRtpTransceiver pTransceiver, PRtcInboundRtpStreamStats pRtcInboundRtpStreamStats)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -182,6 +189,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取DataChannel统计
 STATUS getDataChannelStats(PRtcPeerConnection pRtcPeerConnection, PRtcDataChannelStats pRtcDataChannelStats)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -201,6 +209,7 @@ CleanUp:
     return retStatus;
 }
 
+// rtcPeerConnection 获取Metrics
 STATUS rtcPeerConnectionGetMetrics(PRtcPeerConnection pRtcPeerConnection, PRtcRtpTransceiver pRtcRtpTransceiver, PRtcStats pRtcMetrics)
 {
     STATUS retStatus = STATUS_SUCCESS;

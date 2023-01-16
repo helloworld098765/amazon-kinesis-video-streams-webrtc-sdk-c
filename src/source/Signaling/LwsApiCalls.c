@@ -694,11 +694,13 @@ CleanUp:
     return retStatus;
 }
 
+// 判断Signature 是否过期
 BOOL isCallResultSignatureExpired(PCallInfo pCallInfo)
 {
     return (STRNSTR(pCallInfo->responseData, "Signature expired", pCallInfo->responseDataLen) != NULL);
 }
 
+// 判断Signature还未出现
 BOOL isCallResultSignatureNotYetCurrent(PCallInfo pCallInfo)
 {
     return (STRNSTR(pCallInfo->responseData, "Signature not yet current", pCallInfo->responseDataLen) != NULL);
@@ -2070,6 +2072,7 @@ CleanUp:
     return retStatus;
 }
 
+// 从字符串获取对应的message Type
 STATUS getMessageTypeFromString(PCHAR typeStr, UINT32 typeLen, SIGNALING_MESSAGE_TYPE* pMessageType)
 {
     ENTERS();
@@ -2107,6 +2110,7 @@ CleanUp:
     return retStatus;
 }
 
+// 根据messageType 获取字符串
 PCHAR getMessageTypeInString(SIGNALING_MESSAGE_TYPE messageType)
 {
     switch (messageType) {

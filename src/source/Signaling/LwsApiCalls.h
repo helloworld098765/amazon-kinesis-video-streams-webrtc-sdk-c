@@ -215,6 +215,7 @@ struct __LwsCallInfo {
     UINT32 receiveBufferSize;
 };
 
+// 信令消息包装器
 typedef struct {
     // The first member is the public signaling message structure
     ReceivedSignalingMessage receivedSignalingMessage;

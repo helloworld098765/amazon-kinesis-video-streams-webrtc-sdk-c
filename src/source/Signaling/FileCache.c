@@ -44,14 +44,18 @@ STATUS deserializeSignalingCacheEntries(PCHAR cachedFileContent, UINT64 fileSize
     remainingSize = (UINT32) fileSize;
     /* detect end of file */
     while (remainingSize > MAX_SIGNALING_CACHE_ENTRY_TIMESTAMP_STR_LEN) {
+        // 每行结尾
         nextLine = STRCHR(pCurrent, '\n');
         while ((nextToken = STRCHR(pCurrent, ',')) != NULL && nextToken < nextLine) {
             switch (tokenCount % 7) {
+                // 信令通道名
                 case 0:
                     STRNCPY(pSignalingFileCacheEntryList[entryCount].channelName, pCurrent, nextToken - pCurrent);
                     break;
+                // 角色
                 case 1:
                     STRNCPY(pSignalingFileCacheEntryList[entryCount].region, pCurrent, nextToken - pCurrent);
+                    // 角色
                     if (STRNCMP(pCurrent, SIGNALING_FILE_CACHE_ROLE_TYPE_MASTER_STR, STRLEN(SIGNALING_FILE_CACHE_ROLE_TYPE_MASTER_STR)) == 0) {
                         pSignalingFileCacheEntryList[entryCount].role = SIGNALING_CHANNEL_ROLE_TYPE_MASTER;
                     } else if (STRNCMP(pCurrent, SIGNALING_FILE_CACHE_ROLE_TYPE_VIEWER_STR, STRLEN(SIGNALING_FILE_CACHE_ROLE_TYPE_VIEWER_STR)) == 0) {
@@ -60,15 +64,19 @@ STATUS deserializeSignalingCacheEntries(PCHAR cachedFileContent, UINT64 fileSize
                         CHK_WARN(FALSE, STATUS_INVALID_ARG, "Unknown role type");
                     }
                     break;
+                // 地区
                 case 2:
                     STRNCPY(pSignalingFileCacheEntryList[entryCount].region, pCurrent, nextToken - pCurrent);
                     break;
+                // channelArn
                 case 3:
                     STRNCPY(pSignalingFileCacheEntryList[entryCount].channelArn, pCurrent, nextToken - pCurrent);
                     break;
+                // https endpoint
                 case 4:
                     STRNCPY(pSignalingFileCacheEntryList[entryCount].httpsEndpoint, pCurrent, nextToken - pCurrent);
                     break;
+                // wss Endpoint
                 case 5:
                     STRNCPY(pSignalingFileCacheEntryList[entryCount].wssEndpoint, pCurrent, nextToken - pCurrent);
                     break;
@@ -140,6 +148,7 @@ STATUS signalingCacheLoadFromFile(PCHAR channelName, PCHAR region, SIGNALING_CHA
 
     CHK_STATUS(readFile(cacheFilePath, FALSE, NULL, &fileSize));
 
+    // 文件不为空，开始加载
     if (fileSize > 0) {
         /* +1 for null terminator */
         fileBuffer = MEMCALLOC(1, (fileSize + 1) * SIZEOF(CHAR));

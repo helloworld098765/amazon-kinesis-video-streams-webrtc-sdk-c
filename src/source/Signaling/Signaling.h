@@ -14,16 +14,19 @@ extern "C" {
 #define SIGNALING_REQUEST_ID_HEADER_NAME KVS_REQUEST_ID_HEADER_NAME ":"
 
 // Signaling client from custom data conversion
+// 类型转换
 #define SIGNALING_CLIENT_FROM_CUSTOM_DATA(h) ((PSignalingClient) (h))
 #define CUSTOM_DATA_FROM_SIGNALING_CLIENT(p) ((UINT64) (p))
 
 // Grace period for refreshing the ICE configuration
+// Ice configuration 刷新周期
 #define ICE_CONFIGURATION_REFRESH_GRACE_PERIOD (30 * HUNDREDS_OF_NANOS_IN_A_SECOND)
 
 // Termination timeout
 #define SIGNALING_CLIENT_SHUTDOWN_TIMEOUT ((2 + SIGNALING_SERVICE_API_CALL_TIMEOUT_IN_SECONDS) * HUNDREDS_OF_NANOS_IN_A_SECOND)
 
 // Signaling client state literal definitions
+// 信令客户端状态对应字符串
 #define SIGNALING_CLIENT_STATE_UNKNOWN_STR         "Unknown"
 #define SIGNALING_CLIENT_STATE_NEW_STR             "New"
 #define SIGNALING_CLIENT_STATE_GET_CREDENTIALS_STR "Get Security Credentials"
@@ -48,6 +51,7 @@ extern "C" {
 #define SIGNALING_MAX_ERROR_MESSAGE_LEN 512
 
 // Async ICE config refresh delay in case if the signaling is not yet in READY state
+// 信令Ice config 刷新延迟(异步)
 #define SIGNALING_ASYNC_ICE_CONFIG_REFRESH_DELAY (50 * HUNDREDS_OF_NANOS_IN_A_MILLISECOND)
 
 // Max libWebSockets protocol count. IMPORTANT: Ensure it's 1 + PROTOCOL_INDEX_WSS
@@ -60,6 +64,7 @@ extern "C" {
 #define SIGNALING_CLOCKSKEW_HASH_TABLE_BUCKET_COUNT  MIN_HASH_BUCKET_COUNT // 16
 
 // API call latency calculation
+// 计算API 调用延迟
 #define SIGNALING_API_LATENCY_CALCULATION(pClient, time, isCpApi)                                                                                    \
     MUTEX_LOCK((pClient)->diagnosticsLock);                                                                                                          \
     if (isCpApi) {                                                                                                                                   \
@@ -159,6 +164,7 @@ typedef struct {
 /**
  * Thread execution tracker
  */
+// 线程执行跟踪器
 typedef struct {
     volatile ATOMIC_BOOL terminated;
     TID threadId;

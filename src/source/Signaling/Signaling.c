@@ -4,6 +4,7 @@
 extern StateMachineState SIGNALING_STATE_MACHINE_STATES[];
 extern UINT32 SIGNALING_STATE_MACHINE_STATE_COUNT;
 
+// 创建信令(同步)
 STATUS createSignalingSync(PSignalingClientInfoInternal pClientInfo, PChannelInfo pChannelInfo, PSignalingClientCallbacks pCallbacks,
                            PAwsCredentialProvider pCredentialProvider, PSignalingClient* ppSignalingClient)
 {
@@ -23,24 +24,33 @@ STATUS createSignalingSync(PSignalingClientInfoInternal pClientInfo, PChannelInf
 
     CHK(pClientInfo != NULL && pChannelInfo != NULL && pCallbacks != NULL && pCredentialProvider != NULL && ppSignalingClient != NULL,
         STATUS_NULL_ARG);
+    // 检查版本
     CHK(pChannelInfo->version <= CHANNEL_INFO_CURRENT_VERSION, STATUS_SIGNALING_INVALID_CHANNEL_INFO_VERSION);
+    // 信令条目文件缓存，分配内存
     CHK(NULL != (pFileCacheEntry = (PSignalingFileCacheEntry) MEMALLOC(SIZEOF(SignalingFileCacheEntry))), STATUS_NOT_ENOUGH_MEMORY);
 
     // Allocate enough storage
+    // signalingClient 分配内存
     CHK(NULL != (pSignalingClient = (PSignalingClient) MEMCALLOC(1, SIZEOF(SignalingClient))), STATUS_NOT_ENOUGH_MEMORY);
 
     // Initialize the listener and restart thread trackers
+    // 初始化线程跟踪器
     CHK_STATUS(initializeThreadTracker(&pSignalingClient->listenerTracker));
     CHK_STATUS(initializeThreadTracker(&pSignalingClient->reconnecterTracker));
 
     // Validate and store the input
+    // 创建ChannelInfo
     CHK_STATUS(createValidateChannelInfo(pChannelInfo, &pSignalingClient->pChannelInfo));
+    // 设置callbacks
     CHK_STATUS(validateSignalingCallbacks(pSignalingClient, pCallbacks));
+    // 设置ClientInfo
     CHK_STATUS(validateSignalingClientInfo(pSignalingClient, pClientInfo));
 
+    // 设置版本
     pSignalingClient->version = SIGNALING_CLIENT_CURRENT_VERSION;
 
     // Set invalid call times
+    // 设置无效的调用时间
     pSignalingClient->describeTime = INVALID_TIMESTAMP_VALUE;
     pSignalingClient->createTime = INVALID_TIMESTAMP_VALUE;
     pSignalingClient->getEndpointTime = INVALID_TIMESTAMP_VALUE;
@@ -54,7 +64,9 @@ STATUS createSignalingSync(PSignalingClientInfoInternal pClientInfo, PChannelInf
                                                      pChannelInfo->pRegion, pChannelInfo->channelRoleType, pFileCacheEntry, &cacheFound,
                                                      pSignalingClient->clientInfo.cacheFilePath))) {
             DLOGW("Failed to load signaling cache from file");
-        } else if (cacheFound) {
+        }
+        // cache命中
+        else if (cacheFound) {
             STRCPY(pSignalingClient->channelDescription.channelArn, pFileCacheEntry->channelArn);
             STRCPY(pSignalingClient->channelEndpointHttps, pFileCacheEntry->httpsEndpoint);
             STRCPY(pSignalingClient->channelEndpointWss, pFileCacheEntry->wssEndpoint);
@@ -64,6 +76,7 @@ STATUS createSignalingSync(PSignalingClientInfoInternal pClientInfo, PChannelInf
     }
 
     // Attempting to get the logging level from the env var and if it fails then set it from the client info
+    // 设置日志级别
     if ((userLogLevelStr = GETENV(DEBUG_LOG_LEVEL_ENV_VAR)) != NULL && STATUS_SUCCEEDED(STRTOUI32(userLogLevelStr, NULL, 10, &userLogLevel))) {
         userLogLevel = userLogLevel > LOG_LEVEL_SILENT ? LOG_LEVEL_SILENT : userLogLevel < LOG_LEVEL_VERBOSE ? LOG_LEVEL_VERBOSE : userLogLevel;
     } else {
@@ -73,16 +86,20 @@ STATUS createSignalingSync(PSignalingClientInfoInternal pClientInfo, PChannelInf
     SET_LOGGER_LOG_LEVEL(userLogLevel);
 
     // Store the credential provider
+    // 设置凭证提供者
     pSignalingClient->pCredentialProvider = pCredentialProvider;
 
+    // 配置信令状态机重试策略
     CHK_STATUS(configureRetryStrategyForSignalingStateMachine(pSignalingClient));
 
     // Create the state machine
+    // 创建状态机
     CHK_STATUS(createStateMachine(SIGNALING_STATE_MACHINE_STATES, SIGNALING_STATE_MACHINE_STATE_COUNT,
                                   CUSTOM_DATA_FROM_SIGNALING_CLIENT(pSignalingClient), signalingGetCurrentTime,
                                   CUSTOM_DATA_FROM_SIGNALING_CLIENT(pSignalingClient), &pSignalingClient->pStateMachine));
 
     // Prepare the signaling channel protocols array
+    // 设置协议、回调函数
     pSignalingClient->signalingProtocols[PROTOCOL_INDEX_HTTPS].name = HTTPS_SCHEME_NAME;
     pSignalingClient->signalingProtocols[PROTOCOL_INDEX_HTTPS].callback = lwsHttpCallbackRoutine;
     pSignalingClient->signalingProtocols[PROTOCOL_INDEX_WSS].name = WSS_SCHEME_NAME;
@@ -91,6 +108,7 @@ STATUS createSignalingSync(PSignalingClientInfoInternal pClientInfo, PChannelInf
     pSignalingClient->currentWsi[PROTOCOL_INDEX_HTTPS] = NULL;
     pSignalingClient->currentWsi[PROTOCOL_INDEX_WSS] = NULL;
 
+    // 设置creationInfo
     MEMSET(&creationInfo, 0x00, SIZEOF(struct lws_context_creation_info));
     creationInfo.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
     creationInfo.port = CONTEXT_PORT_NO_LISTEN;
@@ -105,6 +123,7 @@ STATUS createSignalingSync(PSignalingClientInfoInternal pClientInfo, PChannelInf
     creationInfo.ka_interval = SIGNALING_SERVICE_TCP_KEEPALIVE_PROBE_INTERVAL_IN_SECONDS;
     creationInfo.retry_and_idle_policy = &retryPolicy;
 
+    // 初始化标志
     ATOMIC_STORE_BOOL(&pSignalingClient->clientReady, FALSE);
     ATOMIC_STORE_BOOL(&pSignalingClient->shutdown, FALSE);
     ATOMIC_STORE_BOOL(&pSignalingClient->connected, FALSE);
@@ -116,6 +135,7 @@ STATUS createSignalingSync(PSignalingClientInfoInternal pClientInfo, PChannelInf
     // signal(SIGINT, lwsSignalHandler);
 
     // Create the sync primitives
+    // 创建锁、条件变量
     pSignalingClient->connectedCvar = CVAR_CREATE();
     CHK(IS_VALID_CVAR_VALUE(pSignalingClient->connectedCvar), STATUS_INVALID_OPERATION);
     pSignalingClient->connectedLock = MUTEX_CREATE(FALSE);
@@ -145,12 +165,15 @@ STATUS createSignalingSync(PSignalingClientInfoInternal pClientInfo, PChannelInf
     CHK(IS_VALID_MUTEX_VALUE(pSignalingClient->diagnosticsLock), STATUS_INVALID_OPERATION);
 
     // Create the ongoing message list
+    // 创建消息队列
     CHK_STATUS(stackQueueCreate(&pSignalingClient->pMessageQueue));
 
+    // 创建websocket 上下文
     pSignalingClient->pLwsContext = lws_create_context(&creationInfo);
     CHK(pSignalingClient->pLwsContext != NULL, STATUS_SIGNALING_LWS_CREATE_CONTEXT_FAILED);
 
     // Initializing the diagnostics mostly is taken care of by zero-mem in MEMCALLOC
+    // 设置diagnostics 创建时间
     pSignalingClient->diagnostics.createTime = SIGNALING_GET_CURRENT_TIME(pSignalingClient);
     CHK_STATUS(hashTableCreateWithParams(SIGNALING_CLOCKSKEW_HASH_TABLE_BUCKET_COUNT, SIGNALING_CLOCKSKEW_HASH_TABLE_BUCKET_LENGTH,
                                          &pSignalingClient->diagnostics.pEndpointToClockSkewHashMap));
@@ -160,6 +183,7 @@ STATUS createSignalingSync(PSignalingClientInfoInternal pClientInfo, PChannelInf
 
     // Notify of the state change initially as the state machinery is already in the NEW state
     if (pSignalingClient->signalingClientCallbacks.stateChangeFn != NULL) {
+        // 获取状态机当前状态
         CHK_STATUS(getStateMachineCurrentState(pSignalingClient->pStateMachine, &pStateMachineState));
         CHK_STATUS(pSignalingClient->signalingClientCallbacks.stateChangeFn(pSignalingClient->signalingClientCallbacks.customData,
                                                                             getSignalingStateFromStateMachineState(pStateMachineState->state)));
@@ -169,6 +193,7 @@ STATUS createSignalingSync(PSignalingClientInfoInternal pClientInfo, PChannelInf
     ATOMIC_STORE_BOOL(&pSignalingClient->refreshIceConfig, FALSE);
 
     // We do not cache token in file system, so we will always have to retrieve one after creating the client.
+    // 信令状态迭代
     CHK_STATUS(signalingStateMachineIterator(pSignalingClient, pSignalingClient->diagnostics.createTime + SIGNALING_CONNECT_STATE_TIMEOUT,
                                              SIGNALING_STATE_GET_TOKEN));
 
@@ -178,6 +203,7 @@ CleanUp:
     }
     CHK_LOG_ERR(retStatus);
 
+    // 回收信令资源
     if (STATUS_FAILED(retStatus)) {
         freeSignaling(&pSignalingClient);
     }
@@ -185,11 +211,13 @@ CleanUp:
     if (ppSignalingClient != NULL) {
         *ppSignalingClient = pSignalingClient;
     }
+    // 回收文件缓存资源
     SAFE_MEMFREE(pFileCacheEntry);
     LEAVES();
     return retStatus;
 }
 
+// 回收信令
 STATUS freeSignaling(PSignalingClient* ppSignalingClient)
 {
     ENTERS();
@@ -203,25 +231,35 @@ STATUS freeSignaling(PSignalingClient* ppSignalingClient)
 
     ATOMIC_STORE_BOOL(&pSignalingClient->shutdown, TRUE);
 
+    // 终止正在进行的操作
     terminateOngoingOperations(pSignalingClient);
 
     if (pSignalingClient->pLwsContext != NULL) {
+        // 加锁
         MUTEX_LOCK(pSignalingClient->lwsServiceLock);
+        // 销毁websocket 上下文
         lws_context_destroy(pSignalingClient->pLwsContext);
         pSignalingClient->pLwsContext = NULL;
+        // 解锁
         MUTEX_UNLOCK(pSignalingClient->lwsServiceLock);
     }
 
+    // 回收状态机资源
     freeStateMachine(pSignalingClient->pStateMachine);
 
+    // 回收客户端重试策略资源
     freeClientRetryStrategy(pSignalingClient);
 
+    // 回收ChannelInfo资源
     freeChannelInfo(&pSignalingClient->pChannelInfo);
 
+    // 回收消息队列资源
     stackQueueFree(pSignalingClient->pMessageQueue);
 
+    // 回收哈希表
     hashTableFree(pSignalingClient->diagnostics.pEndpointToClockSkewHashMap);
 
+    // 回收锁、条件变量资源
     if (IS_VALID_MUTEX_VALUE(pSignalingClient->connectedLock)) {
         MUTEX_FREE(pSignalingClient->connectedLock);
     }
@@ -266,6 +304,7 @@ STATUS freeSignaling(PSignalingClient* ppSignalingClient)
         MUTEX_FREE(pSignalingClient->diagnosticsLock);
     }
 
+    // 回收线程跟踪者
     uninitializeThreadTracker(&pSignalingClient->reconnecterTracker);
     uninitializeThreadTracker(&pSignalingClient->listenerTracker);
 
@@ -279,6 +318,7 @@ CleanUp:
     return retStatus;
 }
 
+// 为信令状态机，设置默认重试策略
 STATUS setupDefaultRetryStrategyForSignalingStateMachine(PSignalingClient pSignalingClient)
 {
     ENTERS();
@@ -286,6 +326,7 @@ STATUS setupDefaultRetryStrategyForSignalingStateMachine(PSignalingClient pSigna
     PKvsRetryStrategyCallbacks pKvsRetryStrategyCallbacks = &(pSignalingClient->clientInfo.signalingStateMachineRetryStrategyCallbacks);
 
     // Use default as exponential backoff wait
+    // 设置回调
     pKvsRetryStrategyCallbacks->createRetryStrategyFn = exponentialBackoffRetryStrategyCreate;
     pKvsRetryStrategyCallbacks->freeRetryStrategyFn = exponentialBackoffRetryStrategyFree;
     pKvsRetryStrategyCallbacks->executeRetryStrategyFn = getExponentialBackoffRetryStrategyWaitTime;
@@ -299,6 +340,7 @@ STATUS setupDefaultRetryStrategyForSignalingStateMachine(PSignalingClient pSigna
     return retStatus;
 }
 
+// 为信令状态机配置重试策略
 STATUS configureRetryStrategyForSignalingStateMachine(PSignalingClient pSignalingClient)
 {
     ENTERS();
@@ -323,6 +365,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收信令客户端重试策略资源
 STATUS freeClientRetryStrategy(PSignalingClient pSignalingClient)
 {
     ENTERS();
@@ -342,6 +385,7 @@ CleanUp:
     return retStatus;
 }
 
+// 终止正在进行的操作
 STATUS terminateOngoingOperations(PSignalingClient pSignalingClient)
 {
     ENTERS();
@@ -363,6 +407,7 @@ CleanUp:
     return retStatus;
 }
 
+// 发送信令消息(同步)
 STATUS signalingSendMessageSync(PSignalingClient pSignalingClient, PSignalingMessage pSignalingMessage)
 {
     ENTERS();
@@ -374,14 +419,17 @@ STATUS signalingSendMessageSync(PSignalingClient pSignalingClient, PSignalingMes
     CHK(pSignalingMessage->version <= SIGNALING_MESSAGE_CURRENT_VERSION, STATUS_SIGNALING_INVALID_SIGNALING_MESSAGE_VERSION);
 
     // Store the signaling message
+    // 储存信令消息
     CHK_STATUS(signalingStoreOngoingMessage(pSignalingClient, pSignalingMessage));
     removeFromList = TRUE;
 
     // Perform the call
+    // 发送websocket 消息
     CHK_STATUS(sendLwsMessage(pSignalingClient, pSignalingMessage->messageType, pSignalingMessage->peerClientId, pSignalingMessage->payload,
                               pSignalingMessage->payloadLen, pSignalingMessage->correlationId, 0));
 
     // Update the internal diagnostics only after successfully sending
+    // 发生消息数加1
     ATOMIC_INCREMENT(&pSignalingClient->diagnostics.numberOfMessagesSent);
 
 CleanUp:
@@ -389,6 +437,7 @@ CleanUp:
     CHK_LOG_ERR(retStatus);
 
     // Remove from the list if previously added
+    // 删除信令消息
     if (removeFromList) {
         signalingRemoveOngoingMessage(pSignalingClient, pSignalingMessage->correlationId);
     }
@@ -397,6 +446,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令获取IceConfigInfo数量
 STATUS signalingGetIceConfigInfoCount(PSignalingClient pSignalingClient, PUINT32 pIceConfigCount)
 {
     ENTERS();
@@ -416,6 +466,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令获取IceConfigInfo(根据index)
 STATUS signalingGetIceConfigInfo(PSignalingClient pSignalingClient, UINT32 index, PIceConfigInfo* ppIceConfigInfo)
 {
     ENTERS();
@@ -438,6 +489,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令Fetch(同步)
 STATUS signalingFetchSync(PSignalingClient pSignalingClient)
 {
     ENTERS();
@@ -454,6 +506,7 @@ STATUS signalingFetchSync(PSignalingClient pSignalingClient)
     // move to the fromGetToken() so we can move to the necessary step
     // We start from get token to keep the design consistent with how it was when the constructor (create)
     // would bring you to the READY state, but this is a two-way door and can be redone later.
+    // 设置状态机当前状态
     setStateMachineCurrentState(pSignalingClient->pStateMachine, SIGNALING_STATE_GET_TOKEN);
 
     // if we're not failing from a bad token, set the result to OK to that fromGetToken will move
@@ -462,11 +515,13 @@ STATUS signalingFetchSync(PSignalingClient pSignalingClient)
     if (result != SERVICE_CALL_NOT_AUTHORIZED) {
         ATOMIC_STORE(&pSignalingClient->result, (SIZE_T) SERVICE_CALL_RESULT_OK);
     }
+    // 信令状态机迭代
     CHK_STATUS(signalingStateMachineIterator(pSignalingClient, SIGNALING_GET_CURRENT_TIME(pSignalingClient) + SIGNALING_CONNECT_STATE_TIMEOUT,
                                              SIGNALING_STATE_READY));
 
 CleanUp:
 
+    // 重置状态机重试次数
     if (STATUS_FAILED(retStatus)) {
         resetStateMachineRetryCount(pSignalingClient->pStateMachine);
     }
@@ -475,6 +530,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令连接(同步)
 STATUS signalingConnectSync(PSignalingClient pSignalingClient)
 {
     ENTERS();
@@ -484,6 +540,7 @@ STATUS signalingConnectSync(PSignalingClient pSignalingClient)
     CHK(pSignalingClient != NULL, STATUS_NULL_ARG);
 
     // Validate the state
+    // 设置状态机状态
     CHK_STATUS(acceptSignalingStateMachineState(
         pSignalingClient, SIGNALING_STATE_READY | SIGNALING_STATE_CONNECT | SIGNALING_STATE_DISCONNECTED | SIGNALING_STATE_CONNECTED));
 
@@ -491,8 +548,10 @@ STATUS signalingConnectSync(PSignalingClient pSignalingClient)
     CHK(!ATOMIC_LOAD_BOOL(&pSignalingClient->connected), retStatus);
 
     // Store the signaling state in case we error/timeout so we can re-set it on exit
+    // 获取状态机当前状态
     CHK_STATUS(getStateMachineCurrentState(pSignalingClient->pStateMachine, &pState));
 
+    // 信令状态机迭代
     CHK_STATUS(signalingStateMachineIterator(pSignalingClient, SIGNALING_GET_CURRENT_TIME(pSignalingClient) + SIGNALING_CONNECT_STATE_TIMEOUT,
                                              SIGNALING_STATE_CONNECTED));
 
@@ -510,6 +569,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令断开连接(同步)
 STATUS signalingDisconnectSync(PSignalingClient pSignalingClient)
 {
     ENTERS();
@@ -520,10 +580,12 @@ STATUS signalingDisconnectSync(PSignalingClient pSignalingClient)
     // Check if we are already not connected
     CHK(ATOMIC_LOAD_BOOL(&pSignalingClient->connected), retStatus);
 
+    // 终止正在进行的操作
     CHK_STATUS(terminateOngoingOperations(pSignalingClient));
 
     ATOMIC_STORE(&pSignalingClient->result, (SIZE_T) SERVICE_CALL_RESULT_OK);
 
+    // 信令状态机迭代器
     CHK_STATUS(signalingStateMachineIterator(pSignalingClient, SIGNALING_GET_CURRENT_TIME(pSignalingClient) + SIGNALING_DISCONNECT_STATE_TIMEOUT,
                                              SIGNALING_STATE_READY));
 
@@ -535,6 +597,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令删除(同步)
 STATUS signalingDeleteSync(PSignalingClient pSignalingClient)
 {
     ENTERS();
@@ -548,11 +611,14 @@ STATUS signalingDeleteSync(PSignalingClient pSignalingClient)
     // Mark as being deleted
     ATOMIC_STORE_BOOL(&pSignalingClient->deleting, TRUE);
 
+    // 终止正在进行的操作
     CHK_STATUS(terminateOngoingOperations(pSignalingClient));
 
     // Set the state directly
+    // 设置状态机状态
     setStateMachineCurrentState(pSignalingClient->pStateMachine, SIGNALING_STATE_DELETE);
 
+    // 信令状态机迭代器
     CHK_STATUS(signalingStateMachineIterator(pSignalingClient, SIGNALING_GET_CURRENT_TIME(pSignalingClient) + SIGNALING_DELETE_TIMEOUT,
                                              SIGNALING_STATE_DELETED));
 
@@ -564,6 +630,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置信令回调
 STATUS validateSignalingCallbacks(PSignalingClient pSignalingClient, PSignalingClientCallbacks pCallbacks)
 {
     ENTERS();
@@ -583,12 +650,14 @@ CleanUp:
     return retStatus;
 }
 
+// 设置信令ClientInfo
 STATUS validateSignalingClientInfo(PSignalingClient pSignalingClient, PSignalingClientInfoInternal pClientInfo)
 {
     ENTERS();
     STATUS retStatus = STATUS_SUCCESS;
 
     CHK(pSignalingClient != NULL && pClientInfo != NULL, STATUS_NULL_ARG);
+    // 检查版本
     CHK(pClientInfo->signalingClientInfo.version <= SIGNALING_CLIENT_INFO_CURRENT_VERSION, STATUS_SIGNALING_INVALID_CLIENT_INFO_VERSION);
     CHK(STRNLEN(pClientInfo->signalingClientInfo.clientId, MAX_SIGNALING_CLIENT_ID_LEN + 1) <= MAX_SIGNALING_CLIENT_ID_LEN,
         STATUS_SIGNALING_INVALID_CLIENT_INFO_CLIENT_LENGTH);
@@ -597,9 +666,11 @@ STATUS validateSignalingClientInfo(PSignalingClient pSignalingClient, PSignaling
     pSignalingClient->clientInfo = *pClientInfo;
 
     // V1 features
+    // 版本差异
     switch (pSignalingClient->clientInfo.signalingClientInfo.version) {
         case 0:
             // Set the default path
+            // 设置缓存文件路径
             STRCPY(pSignalingClient->clientInfo.cacheFilePath, DEFAULT_CACHE_FILE_PATH);
 
             break;
@@ -629,6 +700,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置IceConfiguration
 STATUS validateIceConfiguration(PSignalingClient pSignalingClient)
 {
     ENTERS();
@@ -650,7 +722,9 @@ STATUS validateIceConfiguration(PSignalingClient pSignalingClient)
 
     CHK(minTtl > ICE_CONFIGURATION_REFRESH_GRACE_PERIOD, STATUS_SIGNALING_ICE_TTL_LESS_THAN_GRACE_PERIOD);
 
+    // 设置iceConfigTime
     pSignalingClient->iceConfigTime = SIGNALING_GET_CURRENT_TIME(pSignalingClient);
+    // 设置iceConfig过期时间
     pSignalingClient->iceConfigExpiration = pSignalingClient->iceConfigTime + (minTtl - ICE_CONFIGURATION_REFRESH_GRACE_PERIOD);
 
 CleanUp:
@@ -661,6 +735,7 @@ CleanUp:
     return retStatus;
 }
 
+// 刷新IceConfiguration
 STATUS refreshIceConfiguration(PSignalingClient pSignalingClient)
 {
     ENTERS();
@@ -680,12 +755,15 @@ STATUS refreshIceConfiguration(PSignalingClient pSignalingClient)
     CHK(pSignalingClient->iceConfigCount == 0 || curTime > pSignalingClient->iceConfigExpiration, retStatus);
 
     // ICE config can be retrieved in specific states only
+    // 设置状态
     CHK_STATUS(acceptSignalingStateMachineState(
         pSignalingClient, SIGNALING_STATE_READY | SIGNALING_STATE_CONNECT | SIGNALING_STATE_CONNECTED | SIGNALING_STATE_DISCONNECTED));
 
+    // 加锁
     MUTEX_LOCK(pSignalingClient->stateLock);
     locked = TRUE;
     // Get and store the current state to re-set to if we fail
+    // 获取当前信令状态
     CHK_STATUS(getStateMachineCurrentState(pSignalingClient->pStateMachine, &pStateMachineState));
 
     // Force the state machine to revert back to get ICE configuration without re-connection
@@ -694,11 +772,13 @@ STATUS refreshIceConfiguration(PSignalingClient pSignalingClient)
 
     // Iterate the state machinery in steady states only - ready or connected
     if (pStateMachineState->state == SIGNALING_STATE_READY || pStateMachineState->state == SIGNALING_STATE_CONNECTED) {
+        // 信令状态机迭代
         CHK_STATUS(signalingStateMachineIterator(pSignalingClient, curTime + SIGNALING_REFRESH_ICE_CONFIG_STATE_TIMEOUT, pStateMachineState->state));
     }
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSignalingClient->stateLock);
     }
@@ -728,6 +808,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令储存正在进行的消息
 STATUS signalingStoreOngoingMessage(PSignalingClient pSignalingClient, PSignalingMessage pSignalingMessage)
 {
     ENTERS();
@@ -736,15 +817,19 @@ STATUS signalingStoreOngoingMessage(PSignalingClient pSignalingClient, PSignalin
     PSignalingMessage pExistingMessage = NULL;
 
     CHK(pSignalingClient != NULL && pSignalingMessage != NULL, STATUS_NULL_ARG);
+    // 加锁
     MUTEX_LOCK(pSignalingClient->messageQueueLock);
     locked = TRUE;
 
+    // 获取正在进行的消息
     CHK_STATUS(signalingGetOngoingMessage(pSignalingClient, pSignalingMessage->correlationId, pSignalingMessage->peerClientId, &pExistingMessage));
     CHK(pExistingMessage == NULL, STATUS_SIGNALING_DUPLICATE_MESSAGE_BEING_SENT);
+    // 消息入队
     CHK_STATUS(stackQueueEnqueue(pSignalingClient->pMessageQueue, (UINT64) pSignalingMessage));
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSignalingClient->messageQueueLock);
     }
@@ -753,6 +838,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令删除正在进行的消息
 STATUS signalingRemoveOngoingMessage(PSignalingClient pSignalingClient, PCHAR correlationId)
 {
     ENTERS();
@@ -763,11 +849,14 @@ STATUS signalingRemoveOngoingMessage(PSignalingClient pSignalingClient, PCHAR co
     UINT64 data;
 
     CHK(pSignalingClient != NULL && correlationId != NULL, STATUS_NULL_ARG);
+    // 加锁
     MUTEX_LOCK(pSignalingClient->messageQueueLock);
     locked = TRUE;
 
+    // 获得信息队列迭代器
     CHK_STATUS(stackQueueGetIterator(pSignalingClient->pMessageQueue, &iterator));
     while (IS_VALID_ITERATOR(iterator)) {
+        // 获取数据
         CHK_STATUS(stackQueueIteratorGetItem(iterator, &data));
 
         pExistingMessage = (PSignalingMessage) data;
@@ -775,12 +864,13 @@ STATUS signalingRemoveOngoingMessage(PSignalingClient pSignalingClient, PCHAR co
 
         if ((correlationId[0] == '\0' && pExistingMessage->correlationId[0] == '\0') || 0 == STRCMP(pExistingMessage->correlationId, correlationId)) {
             // Remove the match
+            // 删除匹配的item
             CHK_STATUS(stackQueueRemoveItem(pSignalingClient->pMessageQueue, data));
 
             // Early return
             CHK(FALSE, retStatus);
         }
-
+        // 移动指针
         CHK_STATUS(stackQueueIteratorNext(&iterator));
     }
 
@@ -789,6 +879,7 @@ STATUS signalingRemoveOngoingMessage(PSignalingClient pSignalingClient, PCHAR co
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSignalingClient->messageQueueLock);
     }
@@ -797,6 +888,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令获取正在进行的消息(根据correlationId、peerClientId)
 STATUS signalingGetOngoingMessage(PSignalingClient pSignalingClient, PCHAR correlationId, PCHAR peerClientId, PSignalingMessage* ppSignalingMessage)
 {
     ENTERS();
@@ -811,11 +903,14 @@ STATUS signalingGetOngoingMessage(PSignalingClient pSignalingClient, PCHAR corre
         checkPeerClientId = FALSE;
     }
 
+    // 加锁
     MUTEX_LOCK(pSignalingClient->messageQueueLock);
     locked = TRUE;
 
+    // 获取迭代器
     CHK_STATUS(stackQueueGetIterator(pSignalingClient->pMessageQueue, &iterator));
     while (IS_VALID_ITERATOR(iterator)) {
+        // 获取item
         CHK_STATUS(stackQueueIteratorGetItem(iterator, &data));
 
         pExistingMessage = (PSignalingMessage) data;
@@ -839,6 +934,7 @@ CleanUp:
         *ppSignalingMessage = pExistingMessage;
     }
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSignalingClient->messageQueueLock);
     }
@@ -847,6 +943,7 @@ CleanUp:
     return retStatus;
 }
 
+// 初始化线程跟踪器
 STATUS initializeThreadTracker(PThreadTracker pThreadTracker)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -854,27 +951,33 @@ STATUS initializeThreadTracker(PThreadTracker pThreadTracker)
 
     pThreadTracker->threadId = INVALID_TID_VALUE;
 
+    // 创建锁
     pThreadTracker->lock = MUTEX_CREATE(FALSE);
     CHK(IS_VALID_MUTEX_VALUE(pThreadTracker->lock), STATUS_INVALID_OPERATION);
 
+    // 创建条件变量
     pThreadTracker->await = CVAR_CREATE();
     CHK(IS_VALID_CVAR_VALUE(pThreadTracker->await), STATUS_INVALID_OPERATION);
 
+    // 设置终止标志
     ATOMIC_STORE_BOOL(&pThreadTracker->terminated, TRUE);
 
 CleanUp:
     return retStatus;
 }
 
+// 回收线程跟踪器资源
 STATUS uninitializeThreadTracker(PThreadTracker pThreadTracker)
 {
     STATUS retStatus = STATUS_SUCCESS;
     CHK(pThreadTracker != NULL, STATUS_NULL_ARG);
 
+    // 回收锁资源
     if (IS_VALID_MUTEX_VALUE(pThreadTracker->lock)) {
         MUTEX_FREE(pThreadTracker->lock);
     }
 
+    // 回收条件变量资源
     if (IS_VALID_CVAR_VALUE(pThreadTracker->await)) {
         CVAR_FREE(pThreadTracker->await);
     }
@@ -883,6 +986,7 @@ CleanUp:
     return retStatus;
 }
 
+// 等待线程终止
 STATUS awaitForThreadTermination(PThreadTracker pThreadTracker, UINT64 timeout)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -890,6 +994,7 @@ STATUS awaitForThreadTermination(PThreadTracker pThreadTracker, UINT64 timeout)
 
     CHK(pThreadTracker != NULL, STATUS_NULL_ARG);
 
+    // 加锁
     MUTEX_LOCK(pThreadTracker->lock);
     locked = TRUE;
     // Await for the termination
@@ -897,11 +1002,13 @@ STATUS awaitForThreadTermination(PThreadTracker pThreadTracker, UINT64 timeout)
         CHK_STATUS(CVAR_WAIT(pThreadTracker->await, pThreadTracker->lock, timeout));
     }
 
+    // 解锁
     MUTEX_UNLOCK(pThreadTracker->lock);
     locked = FALSE;
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pThreadTracker->lock);
     }
@@ -909,6 +1016,7 @@ CleanUp:
     return retStatus;
 }
 
+// 描述通道
 STATUS describeChannel(PSignalingClient pSignalingClient, UINT64 time)
 {
     ENTERS();
@@ -919,10 +1027,12 @@ STATUS describeChannel(PSignalingClient pSignalingClient, UINT64 time)
 
     THREAD_SLEEP_UNTIL(time);
     // Check for the stale credentials
+    // 检查凭证是否过期
     CHECK_SIGNALING_CREDENTIALS_EXPIRATION(pSignalingClient);
 
     ATOMIC_STORE(&pSignalingClient->result, (SIZE_T) SERVICE_CALL_RESULT_NOT_SET);
 
+    // 
     switch (pSignalingClient->pChannelInfo->cachingPolicy) {
         case SIGNALING_API_CALL_CACHE_TYPE_NONE:
             break;
@@ -972,6 +1082,7 @@ CleanUp:
     return retStatus;
 }
 
+// 创建通道
 STATUS createChannel(PSignalingClient pSignalingClient, UINT64 time)
 {
     ENTERS();
@@ -1014,6 +1125,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取ChannelEndpoint
 STATUS getChannelEndpoint(PSignalingClient pSignalingClient, UINT64 time)
 {
     ENTERS();
@@ -1093,6 +1205,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取IceConfig
 STATUS getIceConfig(PSignalingClient pSignalingClient, UINT64 time)
 {
     ENTERS();
@@ -1134,6 +1247,7 @@ CleanUp:
     return retStatus;
 }
 
+// 删除通道
 STATUS deleteChannel(PSignalingClient pSignalingClient, UINT64 time)
 {
     ENTERS();
@@ -1176,6 +1290,7 @@ CleanUp:
     return retStatus;
 }
 
+// 连接信令通道
 STATUS connectSignalingChannel(PSignalingClient pSignalingClient, UINT64 time)
 {
     ENTERS();
@@ -1221,12 +1336,14 @@ CleanUp:
     return retStatus;
 }
 
+// 信令获取当前时间
 UINT64 signalingGetCurrentTime(UINT64 customData)
 {
     UNUSED_PARAM(customData);
     return GETTIME();
 }
 
+// 信令获取Metrics
 STATUS signalingGetMetrics(PSignalingClient pSignalingClient, PSignalingClientMetrics pSignalingClientMetrics)
 {
     ENTERS();
