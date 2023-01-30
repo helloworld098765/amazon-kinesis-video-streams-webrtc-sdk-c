@@ -10,14 +10,18 @@ PeerConnection internal include file
 extern "C" {
 #endif
 
+// 用户名长度
 #define LOCAL_ICE_UFRAG_LEN 4
+// 密码长度
 #define LOCAL_ICE_PWD_LEN   24
+// 别名长度
 #define LOCAL_CNAME_LEN     16
 
 // https://tools.ietf.org/html/rfc5245#section-15.4
 #define MAX_ICE_UFRAG_LEN 256
 #define MAX_ICE_PWD_LEN   256
 
+// buffer 扩容因子
 #define PEER_FRAME_BUFFER_SIZE_INCREMENT_FACTOR 1.5
 
 // A non-comprehensive list of valid JSON characters

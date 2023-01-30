@@ -2316,6 +2316,7 @@ CleanUp:
     return retStatus;
 }
 
+// Ice Agent 提名候选对
 STATUS iceAgentNominateCandidatePair(PIceAgent pIceAgent)
 {
     ENTERS();
@@ -2354,9 +2355,11 @@ STATUS iceAgentNominateCandidatePair(PIceAgent pIceAgent)
     pNominatedCandidatePair->nominated = TRUE;
 
     // reset transaction id list to ignore future connectivity check response.
+    // 清楚事务ID Store 忽略连通性检查响应
     transactionIdStoreClear(pNominatedCandidatePair->pTransactionIdStore);
 
     // move not nominated candidate pairs to frozen state so the second connectivity check only checks the nominated pair.
+    // 未提名的候选对设置为冻结状态
     CHK_STATUS(doubleListGetHeadNode(pIceAgent->iceCandidatePairs, &pCurNode));
     while (pCurNode != NULL) {
         pIceCandidatePair = (PIceCandidatePair) pCurNode->data;
@@ -2405,6 +2408,7 @@ CleanUp:
     return retStatus;
 }
 
+// incoming RelayedData 处理器
 STATUS incomingRelayedDataHandler(UINT64 customData, PSocketConnection pSocketConnection, PBYTE pBuffer, UINT32 bufferLen, PKvsIpAddress pSrc,
                                   PKvsIpAddress pDest)
 {
@@ -2430,6 +2434,7 @@ CleanUp:
     return retStatus;
 }
 
+// incomingData 处理器
 STATUS incomingDataHandler(UINT64 customData, PSocketConnection pSocketConnection, PBYTE pBuffer, UINT32 bufferLen, PKvsIpAddress pSrc,
                            PKvsIpAddress pDest)
 {
@@ -2525,6 +2530,7 @@ CleanUp:
     return retStatus;
 }
 
+// 处理Stun Packet
 STATUS handleStunPacket(PIceAgent pIceAgent, PBYTE pBuffer, UINT32 bufferLen, PSocketConnection pSocketConnection, PKvsIpAddress pSrcAddr,
                         PKvsIpAddress pDestAddr)
 {
@@ -2548,9 +2554,11 @@ STATUS handleStunPacket(PIceAgent pIceAgent, PBYTE pBuffer, UINT32 bufferLen, PS
     UINT64 connectivityCheckResponsesReceived = 0;
 
     // need to determine stunPacketType before deserializing because different password should be used depending on the packet type
+    // 获取StunPacket 类型
     stunPacketType = (UINT16) getInt16(*((PUINT16) pBuffer));
 
     switch (stunPacketType) {
+        // binding request
         case STUN_PACKET_TYPE_BINDING_REQUEST:
             connectivityCheckRequestsReceived++;
             CHK_STATUS(deserializeStunPacket(pBuffer, bufferLen, (PBYTE) pIceAgent->localPassword,
@@ -2598,6 +2606,7 @@ STATUS handleStunPacket(PIceAgent pIceAgent, PBYTE pBuffer, UINT32 bufferLen, PS
             }
             break;
 
+        // binding response success
         case STUN_PACKET_TYPE_BINDING_RESPONSE_SUCCESS:
             connectivityCheckResponsesReceived++;
             checkSum = COMPUTE_CRC32(pBuffer + STUN_PACKET_TRANSACTION_ID_OFFSET, STUN_TRANSACTION_ID_LEN);
@@ -2709,6 +2718,7 @@ STATUS handleStunPacket(PIceAgent pIceAgent, PBYTE pBuffer, UINT32 bufferLen, PS
             pIceCandidatePair->rtcIceCandidatePairDiagnostics.lastResponseTimestamp = GETTIME();
             break;
 
+        // binding indication
         case STUN_PACKET_TYPE_BINDING_INDICATION:
             DLOGD("Received STUN binding indication");
             break;
@@ -2738,6 +2748,7 @@ CleanUp:
 
     SAFE_MEMFREE(hexStr);
 
+    // 回收Stun Packet
     if (pStunPacket != NULL) {
         freeStunPacket(&pStunPacket);
     }
@@ -2751,6 +2762,7 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent 检查对端Reflexive 候选
 STATUS iceAgentCheckPeerReflexiveCandidate(PIceAgent pIceAgent, PKvsIpAddress pIpAddress, UINT32 priority, BOOL isRemote,
                                            PSocketConnection pSocketConnection)
 {

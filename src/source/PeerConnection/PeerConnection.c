@@ -4,6 +4,7 @@
 
 static volatile ATOMIC_BOOL gKvsWebRtcInitialized = (SIZE_T) FALSE;
 
+// 分配srtp
 STATUS allocateSrtp(PKvsPeerConnection pKvsPeerConnection)
 {
     DtlsKeyingMaterial dtlsKeyingMaterial;
@@ -16,14 +17,17 @@ STATUS allocateSrtp(PKvsPeerConnection pKvsPeerConnection)
     CHK_STATUS(dtlsSessionVerifyRemoteCertificateFingerprint(pKvsPeerConnection->pDtlsSession, pKvsPeerConnection->remoteCertificateFingerprint));
     CHK_STATUS(dtlsSessionPopulateKeyingMaterial(pKvsPeerConnection->pDtlsSession, &dtlsKeyingMaterial));
 
+    // 加锁
     MUTEX_LOCK(pKvsPeerConnection->pSrtpSessionLock);
     locked = TRUE;
 
+    // 初始化 Srtp Session
     CHK_STATUS(initSrtpSession(pKvsPeerConnection->dtlsIsServer ? dtlsKeyingMaterial.clientWriteKey : dtlsKeyingMaterial.serverWriteKey,
                                pKvsPeerConnection->dtlsIsServer ? dtlsKeyingMaterial.serverWriteKey : dtlsKeyingMaterial.clientWriteKey,
                                dtlsKeyingMaterial.srtpProfile, &(pKvsPeerConnection->pSrtpSession)));
 
 CleanUp:
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pKvsPeerConnection->pSrtpSessionLock);
     }
@@ -35,6 +39,7 @@ CleanUp:
     return retStatus;
 }
 
+// allocateSctpSortDataChannelsData 回调函数
 STATUS allocateSctpSortDataChannelsDataCallback(UINT64 customData, PHashEntry pHashEntry)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -52,6 +57,7 @@ CleanUp:
     return retStatus;
 }
 
+// 分配Sctp
 STATUS allocateSctp(PKvsPeerConnection pKvsPeerConnection)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -107,6 +113,7 @@ CleanUp:
     return retStatus;
 }
 
+// 处理入站Packet
 VOID onInboundPacket(UINT64 customData, PBYTE buff, UINT32 buffLen)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -127,6 +134,7 @@ VOID onInboundPacket(UINT64 customData, PBYTE buff, UINT32 buffLen)
                   |       B < 2   -+--> forward to STUN
                   +----------------+
     */
+    // DTLS
     if (buff[0] > 19 && buff[0] < 64) {
         dtlsSessionProcessPacket(pKvsPeerConnection->pDtlsSession, buff, &signedBuffLen);
 
@@ -148,7 +156,9 @@ VOID onInboundPacket(UINT64 customData, PBYTE buff, UINT32 buffLen)
             changePeerConnectionState(pKvsPeerConnection, RTC_PEER_CONNECTION_STATE_CONNECTED);
         }
 
-    } else if ((buff[0] > 127 && buff[0] < 192) && (pKvsPeerConnection->pSrtpSession != NULL)) {
+    }
+    // RTP
+    else if ((buff[0] > 127 && buff[0] < 192) && (pKvsPeerConnection->pSrtpSession != NULL)) {
         if (buff[1] >= 192 && buff[1] <= 223) {
             if (STATUS_FAILED(retStatus = decryptSrtcpPacket(pKvsPeerConnection->pSrtpSession, buff, &signedBuffLen))) {
                 DLOGW("decryptSrtcpPacket failed with 0x%08x", retStatus);
@@ -166,6 +176,7 @@ CleanUp:
     CHK_LOG_ERR(retStatus);
 }
 
+// 发送Packet 到RtpReceiver
 STATUS sendPacketToRtpReceiver(PKvsPeerConnection pKvsPeerConnection, PBYTE pBuffer, UINT32 bufferLen)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -183,6 +194,7 @@ STATUS sendPacketToRtpReceiver(PKvsPeerConnection pKvsPeerConnection, PBYTE pBuf
     CHK(pKvsPeerConnection != NULL && pBuffer != NULL, STATUS_NULL_ARG);
     CHK(bufferLen >= MIN_HEADER_LENGTH, STATUS_INVALID_ARG);
 
+    // 获取同步源
     ssrc = getInt32(*(PUINT32) (pBuffer + SSRC_OFFSET));
 
     CHK_STATUS(doubleListGetHeadNode(pKvsPeerConnection->pTransceivers, &pCurNode));
@@ -200,6 +212,7 @@ STATUS sendPacketToRtpReceiver(PKvsPeerConnection pKvsPeerConnection, PBYTE pBuf
             now = GETTIME();
             CHK(NULL != (pPayload = (PBYTE) MEMALLOC(bufferLen)), STATUS_NOT_ENOUGH_MEMORY);
             MEMCPY(pPayload, pBuffer, bufferLen);
+            // 构造Rtp Packet
             CHK_STATUS(createRtpPacketFromBytes(pPayload, bufferLen, &pRtpPacket));
             // pRtpPacket took ownership of pPayload. Set pPayload to NULL to
             // avoid possible double-free.
@@ -221,6 +234,7 @@ STATUS sendPacketToRtpReceiver(PKvsPeerConnection pKvsPeerConnection, PBYTE pBuf
             headerBytesReceived += RTP_HEADER_LEN(pRtpPacket);
             bytesReceived += pRtpPacket->rawPacketLength - RTP_HEADER_LEN(pRtpPacket);
 
+            // jitterBuffer push 数据
             CHK_STATUS(jitterBufferPush(pTransceiver->pJitterBuffer, pRtpPacket, &discarded));
             if (discarded) {
                 packetsDiscarded++;
@@ -254,6 +268,7 @@ CleanUp:
     return retStatus;
 }
 
+// 改变对等连接状态
 STATUS changePeerConnectionState(PKvsPeerConnection pKvsPeerConnection, RTC_PEER_CONNECTION_STATE newState)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -262,6 +277,7 @@ STATUS changePeerConnectionState(PKvsPeerConnection pKvsPeerConnection, RTC_PEER
     UINT64 customData = 0;
     CHK(pKvsPeerConnection != NULL, STATUS_NULL_ARG);
 
+    // 加锁
     MUTEX_LOCK(pKvsPeerConnection->peerConnectionObjLock);
     locked = TRUE;
 
@@ -273,6 +289,7 @@ STATUS changePeerConnectionState(PKvsPeerConnection pKvsPeerConnection, RTC_PEER
     pKvsPeerConnection->connectionState = newState;
     onConnectionStateChange = pKvsPeerConnection->onConnectionStateChange;
     customData = pKvsPeerConnection->onConnectionStateChangeCustomData;
+    // 解锁
     MUTEX_UNLOCK(pKvsPeerConnection->peerConnectionObjLock);
     locked = FALSE;
 
@@ -282,6 +299,7 @@ STATUS changePeerConnectionState(PKvsPeerConnection pKvsPeerConnection, RTC_PEER
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pKvsPeerConnection->peerConnectionObjLock);
     }
@@ -290,6 +308,7 @@ CleanUp:
     return retStatus;
 }
 
+// FrameReady 函数
 STATUS onFrameReadyFunc(UINT64 customData, UINT16 startIndex, UINT16 endIndex, UINT32 frameSize)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -310,7 +329,9 @@ STATUS onFrameReadyFunc(UINT64 customData, UINT16 startIndex, UINT16 endIndex, U
         CHK(FALSE, retStatus);
     }
     CHK(pPacket != NULL, STATUS_NULL_ARG);
+    // 加锁
     MUTEX_LOCK(pTransceiver->statsLock);
+    // 设置统计信息
     // https://www.w3.org/TR/webrtc-stats/#dom-rtcinboundrtpstreamstats-jitterbufferdelay
     pTransceiver->inboundStats.jitterBufferDelay += (DOUBLE) (GETTIME() - pPacket->receivedTime) / HUNDREDS_OF_NANOS_IN_A_SECOND;
     index = pTransceiver->inboundStats.jitterBufferEmittedCount;
@@ -318,8 +339,10 @@ STATUS onFrameReadyFunc(UINT64 customData, UINT16 startIndex, UINT16 endIndex, U
     if (MEDIA_STREAM_TRACK_KIND_VIDEO == pTransceiver->transceiver.receiver.track.kind) {
         pTransceiver->inboundStats.framesReceived++;
     }
+    // 解锁
     MUTEX_UNLOCK(pTransceiver->statsLock);
 
+    // 扩容1.5倍
     if (frameSize > pTransceiver->peerFrameBufferSize) {
         MEMFREE(pTransceiver->peerFrameBuffer);
         pTransceiver->peerFrameBufferSize = (UINT32) (frameSize * PEER_FRAME_BUFFER_SIZE_INCREMENT_FACTOR);
@@ -347,6 +370,7 @@ CleanUp:
     return retStatus;
 }
 
+// 放弃Frame函数
 STATUS onFrameDroppedFunc(UINT64 customData, UINT16 startIndex, UINT16 endIndex, UINT32 timestamp)
 {
     UNUSED_PARAM(endIndex);
@@ -365,18 +389,22 @@ STATUS onFrameDroppedFunc(UINT64 customData, UINT16 startIndex, UINT16 endIndex,
     }
     // TODO: handle multi-packet frames
     CHK(pPacket != NULL, STATUS_NULL_ARG);
+    // 加锁
     MUTEX_LOCK(pTransceiver->statsLock);
+    // 设置统计信息
     // https://www.w3.org/TR/webrtc-stats/#dom-rtcinboundrtpstreamstats-jitterbufferdelay
     pTransceiver->inboundStats.jitterBufferDelay += (DOUBLE) (GETTIME() - pPacket->receivedTime) / HUNDREDS_OF_NANOS_IN_A_SECOND;
     pTransceiver->inboundStats.jitterBufferEmittedCount++;
     pTransceiver->inboundStats.received.framesDropped++;
     pTransceiver->inboundStats.received.fullFramesLost++;
+    // 解锁
     MUTEX_UNLOCK(pTransceiver->statsLock);
 
 CleanUp:
     return retStatus;
 }
 
+// Ice连接状态改变
 VOID onIceConnectionStateChange(UINT64 customData, UINT64 connectionState)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -433,7 +461,7 @@ VOID onIceConnectionStateChange(UINT64 customData, UINT64 connectionState)
             CHK_STATUS(dtlsSessionStart(pKvsPeerConnection->pDtlsSession, pKvsPeerConnection->dtlsIsServer));
         }
     }
-
+    // 改变对等连接状态
     CHK_STATUS(changePeerConnectionState(pKvsPeerConnection, newConnectionState));
 
 CleanUp:
@@ -441,6 +469,7 @@ CleanUp:
     CHK_LOG_ERR(retStatus);
 }
 
+// 新建IceLocalCandidate回调
 VOID onNewIceLocalCandidate(UINT64 customData, PCHAR candidateSdpStr)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -454,6 +483,7 @@ VOID onNewIceLocalCandidate(UINT64 customData, PCHAR candidateSdpStr)
     CHK(candidateSdpStr == NULL || STRLEN(candidateSdpStr) < MAX_SDP_ATTRIBUTE_VALUE_LENGTH, STATUS_INVALID_ARG);
     CHK(pKvsPeerConnection->onIceCandidate != NULL, retStatus); // do nothing if onIceCandidate is not implemented
 
+    // 加锁
     MUTEX_LOCK(pKvsPeerConnection->peerConnectionObjLock);
     locked = TRUE;
 
@@ -470,11 +500,13 @@ CleanUp:
 
     CHK_LOG_ERR(retStatus);
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pKvsPeerConnection->peerConnectionObjLock);
     }
 }
 
+// sctpSession 出站Packet 回调
 VOID onSctpSessionOutboundPacket(UINT64 customData, PBYTE pPacket, UINT32 packetLen)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -492,6 +524,7 @@ CleanUp:
     }
 }
 
+// sctpSession 数据通道信息回调
 VOID onSctpSessionDataChannelMessage(UINT64 customData, UINT32 channelId, BOOL isBinary, PBYTE pMessage, UINT32 pMessageLen)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -522,6 +555,7 @@ CleanUp:
     }
 }
 
+// SctpSession 数据通道Open
 VOID onSctpSessionDataChannelOpen(UINT64 customData, UINT32 channelId, PBYTE pName, UINT32 nameLen)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -550,6 +584,7 @@ CleanUp:
     CHK_LOG_ERR(retStatus);
 }
 
+// Dtls出站Packet 回调
 VOID onDtlsOutboundPacket(UINT64 customData, PBYTE pBuffer, UINT32 bufferLen)
 {
     PKvsPeerConnection pKvsPeerConnection = NULL;
@@ -558,9 +593,11 @@ VOID onDtlsOutboundPacket(UINT64 customData, PBYTE pBuffer, UINT32 bufferLen)
     }
 
     pKvsPeerConnection = (PKvsPeerConnection) customData;
+    // 发送数据
     iceAgentSendPacket(pKvsPeerConnection->pIceAgent, pBuffer, bufferLen);
 }
 
+// dtls 状态改变回调
 VOID onDtlsStateChange(UINT64 customData, RTC_DTLS_TRANSPORT_STATE newDtlsState)
 {
     PKvsPeerConnection pKvsPeerConnection = NULL;
@@ -1006,6 +1043,7 @@ UINT32 parseExtId(PCHAR extmapValue)
     return extid;
 }
 
+// 设置远程描述
 STATUS setRemoteDescription(PRtcPeerConnection pPeerConnection, PRtcSessionDescriptionInit pSessionDescriptionInit)
 {
     ENTERS();
@@ -1105,6 +1143,7 @@ CleanUp:
     return retStatus;
 }
 
+// 创建Offer
 STATUS createOffer(PRtcPeerConnection pPeerConnection, PRtcSessionDescriptionInit pSessionDescriptionInit)
 {
     ENTERS();
@@ -1144,6 +1183,7 @@ CleanUp:
     return retStatus;
 }
 
+// 创建Answer
 STATUS createAnswer(PRtcPeerConnection pPeerConnection, PRtcSessionDescriptionInit pSessionDescriptionInit)
 {
     ENTERS();
@@ -1168,6 +1208,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置本地描述
 STATUS setLocalDescription(PRtcPeerConnection pPeerConnection, PRtcSessionDescriptionInit pSessionDescriptionInit)
 {
     ENTERS();
@@ -1184,6 +1225,7 @@ CleanUp:
     return retStatus;
 }
 
+// 增加收发器
 STATUS addTransceiver(PRtcPeerConnection pPeerConnection, PRtcMediaStreamTrack pRtcMediaStreamTrack, PRtcRtpTransceiverInit pRtcRtpTransceiverInit,
                       PRtcRtpTransceiver* ppRtcRtpTransceiver)
 {
@@ -1204,6 +1246,7 @@ STATUS addTransceiver(PRtcPeerConnection pPeerConnection, PRtcMediaStreamTrack p
 
     CHK(pKvsPeerConnection != NULL, STATUS_NULL_ARG);
 
+    // 仅接收
     if (direction == RTC_RTP_TRANSCEIVER_DIRECTION_RECVONLY && pRtcMediaStreamTrack == NULL) {
         MEMSET(&videoTrack, 0x00, SIZEOF(RtcMediaStreamTrack));
         videoTrack.kind = MEDIA_STREAM_TRACK_KIND_VIDEO;
@@ -1213,6 +1256,7 @@ STATUS addTransceiver(PRtcPeerConnection pPeerConnection, PRtcMediaStreamTrack p
         pRtcMediaStreamTrack = &videoTrack;
     }
 
+    // 设置解析回调、clockRate
     switch (pRtcMediaStreamTrack->codec) {
         case RTC_CODEC_OPUS:
             depayFunc = depayOpusFromRtpPayload;
@@ -1240,10 +1284,13 @@ STATUS addTransceiver(PRtcPeerConnection pPeerConnection, PRtcMediaStreamTrack p
     }
 
     // TODO: Add ssrc duplicate detection here not only relying on RAND()
+    // 创建KvsRtp 收发器
     CHK_STATUS(createKvsRtpTransceiver(direction, pKvsPeerConnection, ssrc, rtxSsrc, pRtcMediaStreamTrack, NULL, pRtcMediaStreamTrack->codec,
                                        &pKvsRtpTransceiver));
+    // 创建JitterBuffer
     CHK_STATUS(createJitterBuffer(onFrameReadyFunc, onFrameDroppedFunc, depayFunc, DEFAULT_JITTER_BUFFER_MAX_LATENCY, clockRate,
                                   (UINT64) pKvsRtpTransceiver, &pJitterBuffer));
+    // 设置Jitter Buffer
     CHK_STATUS(kvsRtpTransceiverSetJitterBuffer(pKvsRtpTransceiver, pJitterBuffer));
 
     // after pKvsRtpTransceiver is successfully created, jitterBuffer will be freed by pKvsRtpTransceiver.
@@ -1259,10 +1306,12 @@ STATUS addTransceiver(PRtcPeerConnection pPeerConnection, PRtcMediaStreamTrack p
 
 CleanUp:
 
+    // 回收JitterBuffer资源
     if (pJitterBuffer != NULL) {
         freeJitterBuffer(&pJitterBuffer);
     }
 
+    // 回收Rtp收发器资源
     if (pKvsRtpTransceiver != NULL) {
         freeKvsRtpTransceiver(&pKvsRtpTransceiver);
     }
@@ -1271,6 +1320,7 @@ CleanUp:
     return retStatus;
 }
 
+// 增加支持的解码器
 STATUS addSupportedCodec(PRtcPeerConnection pPeerConnection, RTC_CODEC rtcCodec)
 {
     ENTERS();
@@ -1287,6 +1337,7 @@ CleanUp:
     return retStatus;
 }
 
+// 增加Ice候选
 STATUS addIceCandidate(PRtcPeerConnection pPeerConnection, PCHAR pIceCandidate)
 {
     ENTERS();
@@ -1303,6 +1354,7 @@ CleanUp:
     return retStatus;
 }
 
+// 重启ICE
 STATUS restartIce(PRtcPeerConnection pPeerConnection)
 {
     ENTERS();
@@ -1312,6 +1364,7 @@ STATUS restartIce(PRtcPeerConnection pPeerConnection)
     CHK(pKvsPeerConnection != NULL, STATUS_NULL_ARG);
 
     /* generate new local uFrag and uPwd and clear out remote uFrag and uPwd */
+    // 生成用户名、密码
     CHK_STATUS(generateJSONSafeString(pKvsPeerConnection->localIceUfrag, LOCAL_ICE_UFRAG_LEN));
     CHK_STATUS(generateJSONSafeString(pKvsPeerConnection->localIcePwd, LOCAL_ICE_PWD_LEN));
     pKvsPeerConnection->remoteIceUfrag[0] = '\0';
@@ -1326,6 +1379,7 @@ CleanUp:
     return retStatus;
 }
 
+// 关闭对等连接
 STATUS closePeerConnection(PRtcPeerConnection pPeerConnection)
 {
     ENTERS();
@@ -1333,7 +1387,9 @@ STATUS closePeerConnection(PRtcPeerConnection pPeerConnection)
     PKvsPeerConnection pKvsPeerConnection = (PKvsPeerConnection) pPeerConnection;
 
     CHK(pKvsPeerConnection != NULL, STATUS_NULL_ARG);
+    // 关闭DtlsSession
     CHK_LOG_ERR(dtlsSessionShutdown(pKvsPeerConnection->pDtlsSession));
+    // 关闭IceAgent
     CHK_LOG_ERR(iceAgentShutdown(pKvsPeerConnection->pIceAgent));
 
 CleanUp:
@@ -1361,6 +1417,7 @@ CleanUp:
     return canTrickle;
 }
 
+// 初始化 Kvs Webrtc
 STATUS initKvsWebRtc(VOID)
 {
     ENTERS();
@@ -1369,9 +1426,11 @@ STATUS initKvsWebRtc(VOID)
 
     SRAND(GETTIME());
 
+    // srtp init
     CHK(srtp_init() == srtp_err_status_ok, STATUS_SRTP_INIT_FAILED);
 
     // init endianness handling
+    // 启动无符号处理
     initializeEndianness();
 
     KVS_CRYPTO_INIT();
@@ -1389,16 +1448,18 @@ CleanUp:
     return retStatus;
 }
 
+// 反初始化 kvsWebrtc
 STATUS deinitKvsWebRtc(VOID)
 {
     ENTERS();
     STATUS retStatus = STATUS_SUCCESS;
     CHK(ATOMIC_LOAD_BOOL(&gKvsWebRtcInitialized), retStatus);
 
+// deinit Sctp 会话
 #ifdef ENABLE_DATA_CHANNEL
     deinitSctpSession();
 #endif
-
+    // 关闭srtp
     srtp_shutdown();
 
     ATOMIC_STORE_BOOL(&gKvsWebRtcInitialized, FALSE);

@@ -124,10 +124,18 @@ typedef enum {
  * Reference: https://www.w3.org/TR/webrtc-stats/#rtcstatsicecandidatepairstate-enum
  */
 typedef enum {
+    // 所有 Candidate Pair 初始化完成以后就在这个状态
+    // 对于相同的 Foundation（相似的 Candidate）,
+    // 会按照优先级依次选取一个 Pair，Unfreeze，并设置为 Waiting 状态，
+    // 其他则保持 Frozen。直到选取的 Pair 完成，才会继续 Unfreeze 另一个 Pair。
     ICE_CANDIDATE_PAIR_STATE_FROZEN = 0,
+    // 当连通性检查还没有开始执行的时候（Binding Request 还没发送）
     ICE_CANDIDATE_PAIR_STATE_WAITING = 1,
+    // 当连通性检查发送了，但是相应检查的事务仍在执行中（Binding Request 已发送）
     ICE_CANDIDATE_PAIR_STATE_IN_PROGRESS = 2,
+    // 连通性检查执行完成且返回结果成功（Binding Request 已完成）
     ICE_CANDIDATE_PAIR_STATE_SUCCEEDED = 3,
+    // 连通性检查执行完成且结果失败（Binding Request 已完成）
     ICE_CANDIDATE_PAIR_STATE_FAILED = 4,
 } ICE_CANDIDATE_PAIR_STATE;
 
