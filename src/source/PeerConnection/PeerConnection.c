@@ -583,6 +583,7 @@ VOID onDtlsStateChange(UINT64 customData, RTC_DTLS_TRANSPORT_STATE newDtlsState)
 /* Generate a printable string that does not
  * need to be escaped when encoding in JSON
  */
+// 生成安全的Json字符串
 STATUS generateJSONSafeString(PCHAR pDst, UINT32 len)
 {
     ENTERS();

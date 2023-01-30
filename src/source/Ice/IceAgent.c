@@ -6,6 +6,8 @@
 
 // https://developer.mozilla.org/en-US/docs/Web/API/RTCIceCandidate/candidate
 // https://tools.ietf.org/html/rfc5245#section-15.1
+
+// 
 typedef enum {
     SDP_ICE_CANDIDATE_PARSER_STATE_FOUNDATION = 0,
     SDP_ICE_CANDIDATE_PARSER_STATE_COMPONENT,
@@ -21,6 +23,7 @@ typedef enum {
 extern StateMachineState ICE_AGENT_STATE_MACHINE_STATES[];
 extern UINT32 ICE_AGENT_STATE_MACHINE_STATE_COUNT;
 
+// 创建IceAgent
 STATUS createIceAgent(PCHAR username, PCHAR password, PIceAgentCallbacks pIceAgentCallbacks, PRtcConfiguration pRtcConfiguration,
                       TIMER_QUEUE_HANDLE timerQueueHandle, PConnectionListener pConnectionListener, PIceAgent* ppIceAgent)
 {
@@ -37,9 +40,11 @@ STATUS createIceAgent(PCHAR username, PCHAR password, PIceAgentCallbacks pIceAge
 
     // allocate the entire struct
     CHK(NULL != (pIceAgent = (PIceAgent) MEMCALLOC(1, SIZEOF(IceAgent))), STATUS_NOT_ENOUGH_MEMORY);
+    // 设置username password
     STRNCPY(pIceAgent->localUsername, username, MAX_ICE_CONFIG_USER_NAME_LEN);
     STRNCPY(pIceAgent->localPassword, password, MAX_ICE_CONFIG_CREDENTIAL_LEN);
 
+    // 设置标志
     ATOMIC_STORE_BOOL(&pIceAgent->remoteCredentialReceived, FALSE);
     ATOMIC_STORE_BOOL(&pIceAgent->agentStartGathering, FALSE);
     ATOMIC_STORE_BOOL(&pIceAgent->candidateGatheringFinished, FALSE);
@@ -52,6 +57,7 @@ STATUS createIceAgent(PCHAR username, PCHAR password, PIceAgentCallbacks pIceAge
     pIceAgent->kvsRtcConfiguration = pRtcConfiguration->kvsRtcConfiguration;
     CHK_STATUS(iceAgentValidateKvsRtcConfig(&pIceAgent->kvsRtcConfiguration));
 
+    // 设置回调
     if (pIceAgentCallbacks != NULL) {
         pIceAgent->iceAgentCallbacks = *pIceAgentCallbacks;
     }
@@ -60,9 +66,11 @@ STATUS createIceAgent(PCHAR username, PCHAR password, PIceAgentCallbacks pIceAge
     pIceAgent->localNetworkInterfaceCount = ARRAY_SIZE(pIceAgent->localNetworkInterfaces);
     pIceAgent->candidateGatheringEndTime = INVALID_TIMESTAMP_VALUE;
 
+    // 创建锁
     pIceAgent->lock = MUTEX_CREATE(FALSE);
 
     // Create the state machine
+    // 创建状态机
     CHK_STATUS(createStateMachine(ICE_AGENT_STATE_MACHINE_STATES, ICE_AGENT_STATE_MACHINE_STATE_COUNT, (UINT64) pIceAgent, iceAgentGetCurrentTime,
                                   (UINT64) pIceAgent, &pIceAgent->pStateMachine));
     pIceAgent->iceAgentStatus = STATUS_SUCCESS;
@@ -75,13 +83,16 @@ STATUS createIceAgent(PCHAR username, PCHAR password, PIceAgentCallbacks pIceAge
     pIceAgent->disconnectionGracePeriodEndTime = INVALID_TIMESTAMP_VALUE;
     pIceAgent->pConnectionListener = pConnectionListener;
     pIceAgent->pDataSendingIceCandidatePair = NULL;
+    // 创建事务ID Store
     CHK_STATUS(createTransactionIdStore(DEFAULT_MAX_STORED_TRANSACTION_ID_COUNT, &pIceAgent->pStunBindingRequestTransactionIdStore));
 
     pIceAgent->relayCandidateCount = 0;
 
+    // 创建双向链表
     CHK_STATUS(doubleListCreate(&pIceAgent->localCandidates));
     CHK_STATUS(doubleListCreate(&pIceAgent->remoteCandidates));
-    CHK_STATUS(doubleListCreate(&pIceAgent->iceCandidatePairs));
+    CHK_STATUS(doubleListCreate(&pIceAgent->iceCandidatePairs));、
+    // 创建队列
     CHK_STATUS(stackQueueCreate(&pIceAgent->triggeredCheckQueue));
 
     // Pre-allocate stun packets
@@ -91,6 +102,7 @@ STATUS createIceAgent(PCHAR username, PCHAR password, PIceAgentCallbacks pIceAge
     CHK_STATUS(hashTableCreateWithParams(ICE_HASH_TABLE_BUCKET_COUNT, ICE_HASH_TABLE_BUCKET_LENGTH, &pIceAgent->requestTimestampDiagnostics));
 
     pIceAgent->iceServersCount = 0;
+    // 设置ICE server
     for (i = 0; i < MAX_ICE_SERVERS_COUNT; i++) {
         if (pRtcConfiguration->iceServers[i].urls[0] != '\0' &&
             STATUS_SUCCEEDED(parseIceServer(&pIceAgent->iceServers[pIceAgent->iceServersCount], (PCHAR) pRtcConfiguration->iceServers[i].urls,
@@ -132,6 +144,8 @@ CleanUp:
  * @param ppIceAgent
  * @return
  */
+// 非线程安全
+// 回收IceAgent 资源
 STATUS freeIceAgent(PIceAgent* ppIceAgent)
 {
     ENTERS();
@@ -157,12 +171,14 @@ STATUS freeIceAgent(PIceAgent* ppIceAgent)
             pIceCandidate = (PIceCandidate) pCurNode->data;
             pCurNode = pCurNode->pNext;
 
+            // 回收turn connection 资源
             if (pIceCandidate->iceCandidateType == ICE_CANDIDATE_TYPE_RELAYED) {
                 CHK_LOG_ERR(freeTurnConnection(&pIceCandidate->pTurnConnection));
             }
         }
     }
 
+    // 回收ConnectionListener资源
     if (pIceAgent->pConnectionListener != NULL) {
         CHK_LOG_ERR(freeConnectionListener(&pIceAgent->pConnectionListener));
     }
@@ -174,6 +190,7 @@ STATUS freeIceAgent(PIceAgent* ppIceAgent)
             pCurNode = pCurNode->pNext;
             pIceCandidatePair = (PIceCandidatePair) data;
 
+            // 回收候选对资源
             CHK_LOG_ERR(freeIceCandidatePair(&pIceCandidatePair));
         }
 
@@ -189,6 +206,7 @@ STATUS freeIceAgent(PIceAgent* ppIceAgent)
             pIceCandidate = (PIceCandidate) data;
 
             /* turn sockets are freed by freeTurnConnection */
+            // 回收socket Connection资源
             if (pIceCandidate->iceCandidateType != ICE_CANDIDATE_TYPE_RELAYED) {
                 CHK_LOG_ERR(freeSocketConnection(&pIceCandidate->pSocketConnection));
             }
@@ -218,16 +236,20 @@ STATUS freeIceAgent(PIceAgent* ppIceAgent)
         CHK_LOG_ERR(doubleListFree(pIceAgent->remoteCandidates));
     }
 
+    // 回收队列资源
     if (pIceAgent->triggeredCheckQueue != NULL) {
         CHK_LOG_ERR(stackQueueFree(pIceAgent->triggeredCheckQueue));
     }
 
+    // 回收锁资源
     if (IS_VALID_MUTEX_VALUE(pIceAgent->lock)) {
         MUTEX_FREE(pIceAgent->lock);
     }
 
+    // 回收状态机资源
     freeStateMachine(pIceAgent->pStateMachine);
 
+    // 回收预分配 STUN Packet
     if (pIceAgent->pBindingIndication != NULL) {
         freeStunPacket(&pIceAgent->pBindingIndication);
     }
@@ -250,12 +272,14 @@ CleanUp:
     return retStatus;
 }
 
+// 验证并设置RtcConfig
 STATUS iceAgentValidateKvsRtcConfig(PKvsRtcConfiguration pKvsRtcConfiguration)
 {
     STATUS retStatus = STATUS_SUCCESS;
 
     CHK(pKvsRtcConfiguration != NULL, STATUS_NULL_ARG);
 
+    // 设置超时时间
     if (pKvsRtcConfiguration->iceLocalCandidateGatheringTimeout == 0) {
         pKvsRtcConfiguration->iceLocalCandidateGatheringTimeout = KVS_ICE_GATHER_REFLEXIVE_AND_RELAYED_CANDIDATE_TIMEOUT;
     }
@@ -286,6 +310,7 @@ CleanUp:
     return retStatus;
 }
 
+// Ice Agent 报告新local candidate
 STATUS iceAgentReportNewLocalCandidate(PIceAgent pIceAgent, PIceCandidate pIceCandidate)
 {
     ENTERS();
@@ -295,11 +320,13 @@ STATUS iceAgentReportNewLocalCandidate(PIceAgent pIceAgent, PIceCandidate pIceCa
 
     CHK(pIceAgent != NULL && pIceCandidate != NULL, STATUS_NULL_ARG);
 
+    // 记录日志
     iceAgentLogNewCandidate(pIceCandidate);
 
     CHK_WARN(pIceAgent->iceAgentCallbacks.newLocalCandidateFn != NULL, retStatus, "newLocalCandidateFn callback not implemented");
     CHK_WARN(!ATOMIC_LOAD_BOOL(&pIceAgent->candidateGatheringFinished), retStatus,
              "Cannot report new ice candidate because candidate gathering is already finished");
+    // 序列化ice candidate
     CHK_STATUS(iceCandidateSerialize(pIceCandidate, serializedIceCandidateBuf, &serializedIceCandidateBufLen));
     pIceAgent->iceAgentCallbacks.newLocalCandidateFn(pIceAgent->iceAgentCallbacks.customData, serializedIceCandidateBuf);
 
@@ -311,6 +338,7 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent 增加远程Candidate
 STATUS iceAgentAddRemoteCandidate(PIceAgent pIceAgent, PCHAR pIceCandidateString)
 {
     ENTERS();
@@ -334,9 +362,11 @@ STATUS iceAgentAddRemoteCandidate(PIceAgent pIceAgent, PCHAR pIceCandidateString
 
     MEMSET(&candidateIpAddr, 0x00, SIZEOF(KvsIpAddress));
 
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     locked = TRUE;
 
+    // 检查远程candidate 数量
     CHK_STATUS(doubleListGetNodeCount(pIceAgent->remoteCandidates, &remoteCandidateCount));
     CHK(remoteCandidateCount < KVS_ICE_MAX_REMOTE_CANDIDATE_COUNT, STATUS_ICE_MAX_REMOTE_CANDIDATE_COUNT_EXCEEDED);
     // a=candidate:4234997325 1 udp 2043278322 192.168.0.56 44323 typ host
@@ -422,6 +452,7 @@ STATUS iceAgentAddRemoteCandidate(PIceAgent pIceAgent, PCHAR pIceCandidateString
     CHK_STATUS(doubleListInsertItemHead(pIceAgent->remoteCandidates, (UINT64) pIceCandidate));
     freeIceCandidateIfFail = FALSE;
 
+    // 创建候选对
     CHK_STATUS(createIceCandidatePairs(pIceAgent, pIceCandidate, TRUE));
     iceAgentLogNewCandidate(pIceCandidate);
 
@@ -437,6 +468,7 @@ STATUS iceAgentAddRemoteCandidate(PIceAgent pIceAgent, PCHAR pIceCandidateString
     }
 
 CleanUp:
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
@@ -451,6 +483,7 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent 初始化Host Candidate
 STATUS iceAgentInitHostCandidate(PIceAgent pIceAgent)
 {
     ENTERS();
@@ -466,9 +499,12 @@ STATUS iceAgentInitHostCandidate(PIceAgent pIceAgent)
         pIpAddress = &pIceAgent->localNetworkInterfaces[i];
 
         // make sure pIceAgent->localCandidates has no duplicates
+        // 加锁
         MUTEX_LOCK(pIceAgent->lock);
         locked = TRUE;
+        // 查找候选人
         CHK_STATUS(findCandidateWithIp(pIpAddress, pIceAgent->localCandidates, &pDuplicatedIceCandidate));
+        // 解锁
         MUTEX_UNLOCK(pIceAgent->lock);
         locked = FALSE;
 
@@ -484,17 +520,20 @@ STATUS iceAgentInitHostCandidate(PIceAgent pIceAgent)
             // we dont generate candidates that have the same foundation.
             pTmpIceCandidate->foundation = pIceAgent->foundationCounter++;
             pTmpIceCandidate->pSocketConnection = pSocketConnection;
+            // 计算优先级
             pTmpIceCandidate->priority = computeCandidatePriority(pTmpIceCandidate);
 
             /* Another thread could be calling iceAgentAddRemoteCandidate which triggers createIceCandidatePairs.
              * createIceCandidatePairs will read through localCandidates, since we are mutating localCandidates here,
              * need to acquire lock. */
+            // 加锁
             MUTEX_LOCK(pIceAgent->lock);
             locked = TRUE;
 
             CHK_STATUS(doubleListInsertItemHead(pIceAgent->localCandidates, (UINT64) pTmpIceCandidate));
             CHK_STATUS(createIceCandidatePairs(pIceAgent, pTmpIceCandidate, FALSE));
 
+            // 解锁
             MUTEX_UNLOCK(pIceAgent->lock);
             locked = FALSE;
 
@@ -515,6 +554,7 @@ CleanUp:
 
     CHK_LOG_ERR(retStatus);
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
@@ -529,6 +569,7 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent 启动代理
 STATUS iceAgentStartAgent(PIceAgent pIceAgent, PCHAR remoteUsername, PCHAR remotePassword, BOOL isControlling)
 {
     ENTERS();
@@ -542,6 +583,7 @@ STATUS iceAgentStartAgent(PIceAgent pIceAgent, PCHAR remoteUsername, PCHAR remot
             STRNLEN(remotePassword, MAX_ICE_CONFIG_CREDENTIAL_LEN + 1) <= MAX_ICE_CONFIG_CREDENTIAL_LEN,
         STATUS_INVALID_ARG);
 
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     locked = TRUE;
 
@@ -551,22 +593,27 @@ STATUS iceAgentStartAgent(PIceAgent pIceAgent, PCHAR remoteUsername, PCHAR remot
         pIceAgent->isControlling = isControlling;
     }
 
+    // 设置username password
     STRNCPY(pIceAgent->remoteUsername, remoteUsername, MAX_ICE_CONFIG_USER_NAME_LEN);
     STRNCPY(pIceAgent->remotePassword, remotePassword, MAX_ICE_CONFIG_CREDENTIAL_LEN);
     if (STRLEN(pIceAgent->remoteUsername) + STRLEN(pIceAgent->localUsername) + 1 > MAX_ICE_CONFIG_USER_NAME_LEN) {
         DLOGW("remoteUsername:localUsername will be truncated to stay within %u char limit", MAX_ICE_CONFIG_USER_NAME_LEN);
     }
+    // remoteUsername:localUsername
     SNPRINTF(pIceAgent->combinedUserName, ARRAY_SIZE(pIceAgent->combinedUserName), "%s:%s", pIceAgent->remoteUsername, pIceAgent->localUsername);
 
+    // 解锁
     MUTEX_UNLOCK(pIceAgent->lock);
     locked = FALSE;
 
+    // 增加定时器
     CHK_STATUS(timerQueueAddTimer(pIceAgent->timerQueueHandle, KVS_ICE_DEFAULT_TIMER_START_DELAY,
                                   pIceAgent->kvsRtcConfiguration.iceConnectionCheckPollingInterval, iceAgentStateTransitionTimerCallback,
                                   (UINT64) pIceAgent, &pIceAgent->iceAgentStateTimerTask));
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
@@ -575,6 +622,7 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent 启动收集
 STATUS iceAgentStartGathering(PIceAgent pIceAgent)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -584,10 +632,12 @@ STATUS iceAgentStartGathering(PIceAgent pIceAgent)
 
     ATOMIC_STORE_BOOL(&pIceAgent->agentStartGathering, TRUE);
 
+    // 获取本地Ip Address
     CHK_STATUS(getLocalhostIpAddresses(pIceAgent->localNetworkInterfaces, &pIceAgent->localNetworkInterfaceCount,
                                        pIceAgent->kvsRtcConfiguration.iceSetInterfaceFilterFunc, pIceAgent->kvsRtcConfiguration.filterCustomData));
 
     // skip gathering host candidate and srflx candidate if relay only
+    // 如果只有中继,则跳过收集主机候选人和srflx候选人
     if (pIceAgent->iceTransportPolicy != ICE_TRANSPORT_POLICY_RELAY) {
         CHK_STATUS(iceAgentInitHostCandidate(pIceAgent));
         CHK_STATUS(iceAgentInitSrflxCandidate(pIceAgent));
@@ -596,10 +646,12 @@ STATUS iceAgentStartGathering(PIceAgent pIceAgent)
     CHK_STATUS(iceAgentInitRelayCandidates(pIceAgent));
 
     // start listening for incoming data
+    // 启动connectionListener
     CHK_STATUS(connectionListenerStart(pIceAgent->pConnectionListener));
 
     pIceAgent->candidateGatheringEndTime = GETTIME() + pIceAgent->kvsRtcConfiguration.iceLocalCandidateGatheringTimeout;
 
+    // 增加定时器
     CHK_STATUS(timerQueueAddTimer(pIceAgent->timerQueueHandle, KVS_ICE_DEFAULT_TIMER_START_DELAY, KVS_ICE_GATHER_CANDIDATE_TIMER_POLLING_INTERVAL,
                                   iceAgentGatherCandidateTimerCallback, (UINT64) pIceAgent, &pIceAgent->iceCandidateGatheringTimerTask));
 
@@ -607,6 +659,7 @@ CleanUp:
 
     CHK_LOG_ERR(retStatus);
 
+    // 设置IceAgent 错误码
     if (STATUS_FAILED(retStatus)) {
         iceAgentFatalError(pIceAgent, retStatus);
     }
@@ -614,6 +667,7 @@ CleanUp:
     return retStatus;
 }
 
+// ICE Agent 发送Packet
 STATUS iceAgentSendPacket(PIceAgent pIceAgent, PBYTE pBuffer, UINT32 bufferLen)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -627,6 +681,7 @@ STATUS iceAgentSendPacket(PIceAgent pIceAgent, PBYTE pBuffer, UINT32 bufferLen)
     CHK(pIceAgent != NULL && pBuffer != NULL, STATUS_NULL_ARG);
     CHK(bufferLen != 0, STATUS_INVALID_ARG);
 
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     locked = TRUE;
 
@@ -639,12 +694,14 @@ STATUS iceAgentSendPacket(PIceAgent pIceAgent, PBYTE pBuffer, UINT32 bufferLen)
              "Invalid state for data sending candidate pair.");
 
     isRelay = IS_CANN_PAIR_SENDING_FROM_RELAYED(pIceAgent->pDataSendingIceCandidatePair);
+    // 设置中继
     if (isRelay) {
         CHK_ERR(pIceAgent->pDataSendingIceCandidatePair->local->pTurnConnection != NULL, STATUS_NULL_ARG,
                 "Candidate is relay but pTurnConnection is NULL");
         pTurnConnection = pIceAgent->pDataSendingIceCandidatePair->local->pTurnConnection;
     }
 
+    // 发送数据
     retStatus = iceUtilsSendData(pBuffer, bufferLen, &pIceAgent->pDataSendingIceCandidatePair->remote->ipAddress,
                                  pIceAgent->pDataSendingIceCandidatePair->local->pSocketConnection, pTurnConnection, isRelay);
 
@@ -671,6 +728,7 @@ STATUS iceAgentSendPacket(PIceAgent pIceAgent, PBYTE pBuffer, UINT32 bufferLen)
 
 CleanUp:
 
+    // 统计信息
     if (STATUS_SUCCEEDED(retStatus) && pIceAgent->pDataSendingIceCandidatePair != NULL) {
         pIceAgent->pDataSendingIceCandidatePair->rtcIceCandidatePairDiagnostics.packetsDiscardedOnSend += packetsDiscarded;
         pIceAgent->pDataSendingIceCandidatePair->rtcIceCandidatePairDiagnostics.bytesDiscardedOnSend += bytesDiscarded;
@@ -681,6 +739,7 @@ CleanUp:
         pIceAgent->pDataSendingIceCandidatePair->rtcIceCandidatePairDiagnostics.packetsSent += packetsSent;
     }
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
@@ -688,6 +747,7 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent填充SDP 媒体候选描述
 STATUS iceAgentPopulateSdpMediaDescriptionCandidates(PIceAgent pIceAgent, PSdpMediaDescription pSdpMediaDescription, UINT32 attrBufferLen,
                                                      PUINT32 pIndex)
 {
@@ -702,6 +762,7 @@ STATUS iceAgentPopulateSdpMediaDescriptionCandidates(PIceAgent pIceAgent, PSdpMe
 
     attrIndex = *pIndex;
 
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     locked = TRUE;
 
@@ -712,6 +773,7 @@ STATUS iceAgentPopulateSdpMediaDescriptionCandidates(PIceAgent pIceAgent, PSdpMe
         pCandidate = (PIceCandidate) data;
         if (pCandidate->state == ICE_CANDIDATE_STATE_VALID) {
             STRCPY(pSdpMediaDescription->sdpAttributes[attrIndex].attributeName, "candidate");
+            // 序列化(结构--> string)
             CHK_STATUS(iceCandidateSerialize((PIceCandidate) data, pSdpMediaDescription->sdpAttributes[attrIndex].attributeValue, &attrBufferLen));
             attrIndex++;
         }
@@ -721,6 +783,7 @@ STATUS iceAgentPopulateSdpMediaDescriptionCandidates(PIceAgent pIceAgent, PSdpMe
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
@@ -728,6 +791,7 @@ CleanUp:
     return retStatus;
 }
 
+// 关闭IceAgent
 STATUS iceAgentShutdown(PIceAgent pIceAgent)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -742,6 +806,7 @@ STATUS iceAgentShutdown(PIceAgent pIceAgent)
     CHK(pIceAgent != NULL, STATUS_NULL_ARG);
     CHK(!ATOMIC_EXCHANGE_BOOL(&pIceAgent->shutdown, TRUE), retStatus);
 
+    // 取消定时器队列
     if (pIceAgent->iceAgentStateTimerTask != MAX_UINT32) {
         CHK_STATUS(timerQueueCancelTimer(pIceAgent->timerQueueHandle, pIceAgent->iceAgentStateTimerTask, (UINT64) pIceAgent));
         pIceAgent->iceAgentStateTimerTask = MAX_UINT32;
@@ -757,6 +822,7 @@ STATUS iceAgentShutdown(PIceAgent pIceAgent)
         pIceAgent->iceCandidateGatheringTimerTask = MAX_UINT32;
     }
 
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     locked = TRUE;
 
@@ -765,15 +831,19 @@ STATUS iceAgentShutdown(PIceAgent pIceAgent)
         pLocalCandidate = (PIceCandidate) pCurNode->data;
         pCurNode = pCurNode->pNext;
 
+        // p2p
         if (pLocalCandidate->iceCandidateType != ICE_CANDIDATE_TYPE_RELAYED) {
             /* close socket so ice doesnt receive any more data */
             CHK_STATUS(socketConnectionClosed(pLocalCandidate->pSocketConnection));
-        } else {
+        }
+        // 使用中继
+        else {
             CHK_STATUS(turnConnectionShutdown(pLocalCandidate->pTurnConnection, 0));
             turnConnections[turnConnectionCount++] = pLocalCandidate->pTurnConnection;
         }
     }
 
+    // 解锁
     MUTEX_UNLOCK(pIceAgent->lock);
     locked = FALSE;
 
@@ -793,6 +863,7 @@ STATUS iceAgentShutdown(PIceAgent pIceAgent)
     }
 
     /* remove connections last because still need to send data to deallocate turn */
+    // 移除所有connection
     if (pIceAgent->pConnectionListener != NULL) {
         CHK_STATUS(connectionListenerRemoveAllConnection(pIceAgent->pConnectionListener));
     }
@@ -801,6 +872,7 @@ CleanUp:
 
     CHK_LOG_ERR(retStatus);
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
@@ -808,6 +880,7 @@ CleanUp:
     return retStatus;
 }
 
+// 重启IceAgent
 STATUS iceAgentRestart(PIceAgent pIceAgent, PCHAR localIceUfrag, PCHAR localIcePwd)
 {
     ENTERS();
@@ -830,6 +903,7 @@ STATUS iceAgentRestart(PIceAgent pIceAgent, PCHAR localIceUfrag, PCHAR localIceP
     alreadyRestarting = ATOMIC_EXCHANGE_BOOL(&pIceAgent->restart, TRUE);
     CHK(!alreadyRestarting, retStatus);
 
+    // 取消定时器
     if (pIceAgent->iceAgentStateTimerTask != MAX_UINT32) {
         CHK_STATUS(timerQueueCancelTimer(pIceAgent->timerQueueHandle, pIceAgent->iceAgentStateTimerTask, (UINT64) pIceAgent));
         pIceAgent->iceAgentStateTimerTask = MAX_UINT32;
@@ -845,6 +919,7 @@ STATUS iceAgentRestart(PIceAgent pIceAgent, PCHAR localIceUfrag, PCHAR localIceP
         pIceAgent->iceCandidateGatheringTimerTask = MAX_UINT32;
     }
 
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     locked = TRUE;
 
@@ -881,6 +956,7 @@ STATUS iceAgentRestart(PIceAgent pIceAgent, PCHAR localIceUfrag, PCHAR localIceP
     }
     CHK_STATUS(doubleListClear(pIceAgent->iceCandidatePairs, FALSE));
 
+    // 解锁
     MUTEX_UNLOCK(pIceAgent->lock);
     locked = FALSE;
 
@@ -895,7 +971,9 @@ STATUS iceAgentRestart(PIceAgent pIceAgent, PCHAR localIceUfrag, PCHAR localIceP
             if (localCandidates[i]->iceCandidateType != ICE_CANDIDATE_TYPE_RELAYED) {
                 CHK_STATUS(connectionListenerRemoveConnection(pIceAgent->pConnectionListener, localCandidates[i]->pSocketConnection));
                 CHK_STATUS(freeSocketConnection(&localCandidates[i]->pSocketConnection));
-            } else {
+            }
+            // 使用中继
+            else {
                 CHK_STATUS(freeTurnConnection(&localCandidates[i]->pTurnConnection));
             }
             MEMFREE(localCandidates[i]);
@@ -906,6 +984,7 @@ STATUS iceAgentRestart(PIceAgent pIceAgent, PCHAR localIceUfrag, PCHAR localIceP
      * There is no way to tell which session a remote candidate belongs to. Old ones will eventually fail the
      * connectivity test so it's ok. */
 
+    // 清理队列
     CHK_STATUS(stackQueueClear(pIceAgent->triggeredCheckQueue, FALSE));
 
     ATOMIC_STORE_BOOL(&pIceAgent->remoteCredentialReceived, FALSE);
@@ -923,6 +1002,7 @@ STATUS iceAgentRestart(PIceAgent pIceAgent, PCHAR localIceUfrag, PCHAR localIceP
     pIceAgent->detectedDisconnection = FALSE;
     pIceAgent->disconnectionGracePeriodEndTime = INVALID_TIMESTAMP_VALUE;
 
+    // 删除所有事务ID
     transactionIdStoreClear(pIceAgent->pStunBindingRequestTransactionIdStore);
 
     STRNCPY(pIceAgent->localUsername, localIceUfrag, MAX_ICE_CONFIG_USER_NAME_LEN);
@@ -935,6 +1015,7 @@ STATUS iceAgentRestart(PIceAgent pIceAgent, PCHAR localIceUfrag, PCHAR localIceP
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
@@ -949,6 +1030,7 @@ CleanUp:
 // internal functions
 //////////////////////////////////////////////
 
+// 根据IP查找候选人
 STATUS findCandidateWithIp(PKvsIpAddress pIpAddress, PDoubleList pCandidateList, PIceCandidate* ppIceCandidate)
 {
     ENTERS();
@@ -984,6 +1066,7 @@ CleanUp:
     return retStatus;
 }
 
+// 根据SocketConnection查找候选
 STATUS findCandidateWithSocketConnection(PSocketConnection pSocketConnection, PDoubleList pCandidateList, PIceCandidate* ppIceCandidate)
 {
     ENTERS();
@@ -1019,6 +1102,7 @@ CleanUp:
 /*
  * Need to acquire pIceAgent->lock first
  */
+// 创建候选对
 STATUS createIceCandidatePairs(PIceAgent pIceAgent, PIceCandidate pIceCandidate, BOOL isRemoteCandidate)
 {
     ENTERS();
@@ -1096,6 +1180,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收候选对资源
 STATUS freeIceCandidatePair(PIceCandidatePair* ppIceCandidatePair)
 {
     ENTERS();
@@ -1107,6 +1192,7 @@ STATUS freeIceCandidatePair(PIceCandidatePair* ppIceCandidatePair)
     CHK(*ppIceCandidatePair != NULL, retStatus);
     pIceCandidatePair = *ppIceCandidatePair;
 
+    // 回收事务ID Store资源
     CHK_LOG_ERR(freeTransactionIdStore(&pIceCandidatePair->pTransactionIdStore));
     CHK_LOG_ERR(hashTableFree(pIceCandidatePair->requestSentTime));
     SAFE_MEMFREE(pIceCandidatePair);
@@ -1117,6 +1203,7 @@ CleanUp:
     return retStatus;
 }
 
+// 插入候选对
 STATUS insertIceCandidatePair(PDoubleList iceCandidatePairs, PIceCandidatePair pIceCandidatePair)
 {
     ENTERS();
@@ -1152,6 +1239,7 @@ CleanUp:
     return retStatus;
 }
 
+// 根据LocalSocketConnection & RemoteIPAddress 查找候选对
 STATUS findIceCandidatePairWithLocalSocketConnectionAndRemoteAddr(PIceAgent pIceAgent, PSocketConnection pSocketConnection, PKvsIpAddress pRemoteAddr,
                                                                   BOOL checkPort, PIceCandidatePair* ppIceCandidatePair)
 {
@@ -1189,6 +1277,7 @@ CleanUp:
     return retStatus;
 }
 
+// 移除状态不为ICE_CANDIDATE_PAIR_STATE_SUCCEEDED 的候选对
 STATUS pruneUnconnectedIceCandidatePair(PIceAgent pIceAgent)
 {
     ENTERS();
@@ -1222,6 +1311,7 @@ CleanUp:
     return retStatus;
 }
 
+// 检查候选对连接
 STATUS iceCandidatePairCheckConnection(PStunPacket pStunBindingRequest, PIceAgent pIceAgent, PIceCandidatePair pIceCandidatePair)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1229,10 +1319,12 @@ STATUS iceCandidatePairCheckConnection(PStunPacket pStunBindingRequest, PIceAgen
     UINT32 checkSum = 0;
 
     CHK(pStunBindingRequest != NULL && pIceAgent != NULL && pIceCandidatePair != NULL, STATUS_NULL_ARG);
+    // 获取优先级属性
     CHK_STATUS(getStunAttribute(pStunBindingRequest, STUN_ATTRIBUTE_TYPE_PRIORITY, (PStunAttributeHeader*) &pStunAttributePriority));
 
     CHK(pStunAttributePriority != NULL, STATUS_INVALID_ARG);
 
+    // ipv4
     if (pIceCandidatePair->local->ipAddress.family == KVS_IP_FAMILY_TYPE_IPV4) {
         DLOGD("remote ip:%u.%u.%u.%u, port:%u, local ip:%u.%u.%u.%u, port:%u", pIceCandidatePair->remote->ipAddress.address[0],
               pIceCandidatePair->remote->ipAddress.address[1], pIceCandidatePair->remote->ipAddress.address[2],
@@ -1243,10 +1335,14 @@ STATUS iceCandidatePairCheckConnection(PStunPacket pStunBindingRequest, PIceAgen
     }
 
     // update priority and transaction id
+    // 设置优先级
     pStunAttributePriority->priority = pIceCandidatePair->local->priority;
+    // 生成事务ID
     CHK_STATUS(iceUtilsGenerateTransactionId(pStunBindingRequest->header.transactionId, ARRAY_SIZE(pStunBindingRequest->header.transactionId)));
     CHK(pIceCandidatePair->pTransactionIdStore != NULL, STATUS_INVALID_OPERATION);
+    // 插入事务ID
     transactionIdStoreInsert(pIceCandidatePair->pTransactionIdStore, pStunBindingRequest->header.transactionId);
+    // 生成校验码
     checkSum = COMPUTE_CRC32(pStunBindingRequest->header.transactionId, ARRAY_SIZE(pStunBindingRequest->header.transactionId));
     CHK_STATUS(hashTableUpsert(pIceCandidatePair->requestSentTime, checkSum, GETTIME()));
 
@@ -1255,6 +1351,7 @@ STATUS iceCandidatePairCheckConnection(PStunPacket pStunBindingRequest, PIceAgen
         CHK_STATUS(hashTableUpsert(pIceAgent->requestTimestampDiagnostics, checkSum, GETTIME()));
     }
 
+    // 发送数据
     CHK_STATUS(iceAgentSendStunPacket(pStunBindingRequest, (PBYTE) pIceAgent->remotePassword,
                                       (UINT32) STRLEN(pIceAgent->remotePassword) * SIZEOF(CHAR), pIceAgent, pIceCandidatePair->local,
                                       &pIceCandidatePair->remote->ipAddress));
@@ -1268,6 +1365,7 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent 发送Stun Packet
 STATUS iceAgentSendStunPacket(PStunPacket pStunPacket, PBYTE password, UINT32 passwordLen, PIceAgent pIceAgent, PIceCandidate pLocalCandidate,
                               PKvsIpAddress pDestAddr)
 {
@@ -1278,9 +1376,11 @@ STATUS iceAgentSendStunPacket(PStunPacket pStunPacket, PBYTE password, UINT32 pa
 
     CHK(pStunPacket != NULL && pIceAgent != NULL && pLocalCandidate != NULL && pDestAddr != NULL, STATUS_NULL_ARG);
 
+    // 发送数据
     retStatus = iceUtilsSendStunPacket(pStunPacket, password, passwordLen, pDestAddr, pLocalCandidate->pSocketConnection,
                                        pLocalCandidate->pTurnConnection, pLocalCandidate->iceCandidateType == ICE_CANDIDATE_TYPE_RELAYED);
 
+    // 发送失败
     if (STATUS_FAILED(retStatus)) {
         DLOGW("iceUtilsSendStunPacket failed with 0x%08x", retStatus);
 
@@ -1300,7 +1400,9 @@ STATUS iceAgentSendStunPacket(PStunPacket pStunPacket, PBYTE password, UINT32 pa
             DLOGD("mark candidate pair %s_%s as failed", pIceCandidatePair->local->id, pIceCandidatePair->remote->id);
             pIceCandidatePair->state = ICE_CANDIDATE_PAIR_STATE_FAILED;
         }
-    } else {
+    }
+    // 发送成功
+    else {
         CHK_STATUS(findIceCandidatePairWithLocalSocketConnectionAndRemoteAddr(pIceAgent, pLocalCandidate->pSocketConnection, pDestAddr, TRUE,
                                                                               &pIceCandidatePair));
         if (pIceCandidatePair != NULL && pIceCandidatePair == pIceAgent->pDataSendingIceCandidatePair &&
@@ -1325,6 +1427,7 @@ CleanUp:
  * @param customData - custom data passed to timer queue when task was added
  * @return
  */
+// iceAgentStateTransitionTimerCall 回调
 STATUS iceAgentStateTransitionTimerCallback(UINT32 timerId, UINT64 currentTime, UINT64 customData)
 {
     UNUSED_PARAM(timerId);
@@ -1349,6 +1452,9 @@ CleanUp:
     return retStatus;
 }
 
+// prflx和srflx都是为了获取内网主机IP映射的公网IP
+// 只是srflx是通过STUN协议，prflx是直接向目的主机发起连接并请求响应的方式
+// 
 STATUS iceAgentSendSrflxCandidateRequest(PIceAgent pIceAgent)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1365,6 +1471,7 @@ STATUS iceAgentSendSrflxCandidateRequest(PIceAgent pIceAgent)
 
     /* Can't reuse pIceAgent->pBindingRequest because candidate gathering could be running in parallel with
      * connection check. */
+    // 创建Stun Packet
     CHK_STATUS(createStunPacket(STUN_PACKET_TYPE_BINDING_REQUEST, NULL, &pBindingRequest));
 
     CHK_STATUS(doubleListGetHeadNode(pIceAgent->localCandidates, &pCurNode));
@@ -1378,8 +1485,11 @@ STATUS iceAgentSendSrflxCandidateRequest(PIceAgent pIceAgent)
                 case ICE_CANDIDATE_TYPE_SERVER_REFLEXIVE:
                     pIceServer = &(pIceAgent->iceServers[pCandidate->iceServerIndex]);
                     if (pIceServer->ipAddress.family == pCandidate->ipAddress.family) {
+                        // 插入事务ID
                         transactionIdStoreInsert(pIceAgent->pStunBindingRequestTransactionIdStore, pBindingRequest->header.transactionId);
+                        // 生成校验码
                         checkSum = COMPUTE_CRC32(pBindingRequest->header.transactionId, ARRAY_SIZE(pBindingRequest->header.transactionId));
+                        // 发送数据
                         CHK_STATUS(iceAgentSendStunPacket(pBindingRequest, NULL, 0, pIceAgent, pCandidate, &pIceServer->ipAddress));
                         pIceAgent->rtcIceServerDiagnostics[pCandidate->iceServerIndex].totalRequestsSent++;
                         CHK_STATUS(hashTableUpsert(pIceAgent->requestTimestampDiagnostics, checkSum, GETTIME()));
@@ -1396,10 +1506,12 @@ CleanUp:
 
     CHK_LOG_ERR(retStatus);
 
+    // 回收Stun Packet
     if (pBindingRequest != NULL) {
         freeStunPacket(&pBindingRequest);
     }
 
+    // 设置错误码
     if (STATUS_FAILED(retStatus)) {
         iceAgentFatalError(pIceAgent, retStatus);
     }
@@ -1407,6 +1519,7 @@ CleanUp:
     return retStatus;
 }
 
+// Ice Agent 检查候选对连接
 STATUS iceAgentCheckCandidatePairConnection(PIceAgent pIceAgent)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1419,6 +1532,7 @@ STATUS iceAgentCheckCandidatePairConnection(PIceAgent pIceAgent)
     CHK(pIceAgent != NULL, STATUS_NULL_ARG);
 
     // Assuming pIceAgent->candidatePairs is sorted by priority
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     locked = TRUE;
 
@@ -1452,10 +1566,12 @@ CleanUp:
 
     CHK_LOG_ERR(retStatus);
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
 
+    // 设置错误码
     if (STATUS_FAILED(retStatus)) {
         iceAgentFatalError(pIceAgent, retStatus);
     }
@@ -1463,6 +1579,7 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent 保持心跳定时器回调
 STATUS iceAgentSendKeepAliveTimerCallback(UINT32 timerId, UINT64 currentTime, UINT64 customData)
 {
     UNUSED_PARAM(timerId);
@@ -1485,6 +1602,7 @@ STATUS iceAgentSendKeepAliveTimerCallback(UINT32 timerId, UINT64 currentTime, UI
         if (pIceCandidatePair->state == ICE_CANDIDATE_PAIR_STATE_SUCCEEDED) {
             pIceCandidatePair->lastDataSentTime = currentTime;
             DLOGV("send keep alive");
+            // 发送绑定指令，刷新生命周期
             CHK_STATUS(iceAgentSendStunPacket(pIceAgent->pBindingIndication, NULL, 0, pIceAgent, pIceCandidatePair->local,
                                               &pIceCandidatePair->remote->ipAddress));
         }
@@ -1505,6 +1623,7 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent 收集候选人定时器回调
 STATUS iceAgentGatherCandidateTimerCallback(UINT32 timerId, UINT64 currentTime, UINT64 customData)
 {
     UNUSED_PARAM(timerId);
@@ -1523,6 +1642,7 @@ STATUS iceAgentGatherCandidateTimerCallback(UINT32 timerId, UINT64 currentTime, 
     MEMSET(newLocalCandidates, 0x00, SIZEOF(newLocalCandidates));
     MEMSET(&relayAddress, 0x00, SIZEOF(KvsIpAddress));
 
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     locked = TRUE;
 
@@ -1574,6 +1694,7 @@ STATUS iceAgentGatherCandidateTimerCallback(UINT32 timerId, UINT64 currentTime, 
         }
     }
 
+    // 解锁
     MUTEX_UNLOCK(pIceAgent->lock);
     locked = FALSE;
 
@@ -1602,6 +1723,7 @@ CleanUp:
         retStatus = STATUS_TIMER_QUEUE_STOP_SCHEDULING;
     }
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
@@ -1609,6 +1731,7 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent 发送候选提名
 STATUS iceAgentSendCandidateNomination(PIceAgent pIceAgent)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1620,6 +1743,7 @@ STATUS iceAgentSendCandidateNomination(PIceAgent pIceAgent)
     // do nothing if not controlling
     CHK(pIceAgent->isControlling, retStatus);
 
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     locked = TRUE;
 
@@ -1638,6 +1762,7 @@ CleanUp:
 
     CHK_LOG_ERR(retStatus);
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
@@ -1649,6 +1774,7 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent 初始化Srflx Candidate
 STATUS iceAgentInitSrflxCandidate(PIceAgent pIceAgent)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1737,6 +1863,8 @@ CleanUp:
     return retStatus;
 }
 
+
+// IceAgent 初始化Relay 候选
 STATUS iceAgentInitRelayCandidates(PIceAgent pIceAgent)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1766,6 +1894,7 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent 初始化Relay Candidate
 STATUS iceAgentInitRelayCandidate(PIceAgent pIceAgent, UINT32 iceServerIndex, KVS_SOCKET_PROTOCOL protocol)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1848,6 +1977,7 @@ CleanUp:
     return retStatus;
 }
 
+// Ice Agent 检查连接状态设置
 STATUS iceAgentCheckConnectionStateSetup(PIceAgent pIceAgent)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1877,8 +2007,11 @@ STATUS iceAgentCheckConnectionStateSetup(PIceAgent pIceAgent)
     if (pIceAgent->pBindingRequest != NULL) {
         CHK_STATUS(freeStunPacket(&pIceAgent->pBindingRequest));
     }
+    // 创建Stun Packet
     CHK_STATUS(createStunPacket(STUN_PACKET_TYPE_BINDING_REQUEST, NULL, &pIceAgent->pBindingRequest));
+    // 追加Username属性
     CHK_STATUS(appendStunUsernameAttribute(pIceAgent->pBindingRequest, pIceAgent->combinedUserName));
+    // 追加优先级属性
     CHK_STATUS(appendStunPriorityAttribute(pIceAgent->pBindingRequest, 0));
     CHK_STATUS(appendStunIceControllAttribute(pIceAgent->pBindingRequest,
                                               pIceAgent->isControlling ? STUN_ATTRIBUTE_TYPE_ICE_CONTROLLING : STUN_ATTRIBUTE_TYPE_ICE_CONTROLLED,
@@ -1890,10 +2023,12 @@ CleanUp:
 
     CHK_LOG_ERR(retStatus);
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
 
+    // 设置错误码
     if (STATUS_FAILED(retStatus)) {
         iceAgentFatalError(pIceAgent, retStatus);
     }
@@ -1901,6 +2036,7 @@ CleanUp:
     return retStatus;
 }
 
+// 更新候选统计信息
 STATUS updateCandidateStats(PIceAgent pIceAgent, BOOL isRemote)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1949,18 +2085,22 @@ STATUS updateCandidateStats(PIceAgent pIceAgent, BOOL isRemote)
 CleanUp:
     return retStatus;
 }
+
 STATUS updateSelectedLocalRemoteCandidateStats(PIceAgent pIceAgent)
 {
     STATUS retStatus = STATUS_SUCCESS;
     CHK(pIceAgent != NULL, STATUS_NULL_ARG);
     // Update local candidate stats
+    // 本地
     CHK_STATUS(updateCandidateStats(pIceAgent, FALSE));
     // Update remote candidate stats
+    // 远程
     CHK_STATUS(updateCandidateStats(pIceAgent, TRUE));
 CleanUp:
     return retStatus;
 }
 
+// IceAgent Connected 状态设置
 STATUS iceAgentConnectedStateSetup(PIceAgent pIceAgent)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1970,6 +2110,7 @@ STATUS iceAgentConnectedStateSetup(PIceAgent pIceAgent)
 
     CHK(pIceAgent != NULL, STATUS_NULL_ARG);
     if (pIceAgent->pDataSendingIceCandidatePair != NULL) {
+        // 加锁
         MUTEX_LOCK(pIceAgent->lock);
         locked = TRUE;
 
@@ -1978,11 +2119,13 @@ STATUS iceAgentConnectedStateSetup(PIceAgent pIceAgent)
         pLastDataSendingIceCandidatePair = pIceAgent->pDataSendingIceCandidatePair;
         pIceAgent->pDataSendingIceCandidatePair = NULL;
 
+        // 解锁
         MUTEX_UNLOCK(pIceAgent->lock);
         locked = FALSE;
 
         /* If pDataSendingIceCandidatePair is not NULL, then it must be the data sending pair before ice restart.
          * Free its resource here since not there is a new connected pair to replace it. */
+        // 中继
         if (IS_CANN_PAIR_SENDING_FROM_RELAYED(pLastDataSendingIceCandidatePair)) {
             CHK_STATUS(turnConnectionShutdown(pLastDataSendingIceCandidatePair->local->pTurnConnection, KVS_ICE_TURN_CONNECTION_SHUTDOWN_TIMEOUT));
             CHK_STATUS(freeTurnConnection(&pLastDataSendingIceCandidatePair->local->pTurnConnection));
@@ -1997,6 +2140,7 @@ STATUS iceAgentConnectedStateSetup(PIceAgent pIceAgent)
         CHK_STATUS(freeIceCandidatePair(&pLastDataSendingIceCandidatePair));
     }
 
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     locked = TRUE;
 
@@ -2017,6 +2161,7 @@ STATUS iceAgentConnectedStateSetup(PIceAgent pIceAgent)
     }
 
     // schedule sending keep alive
+    // 保持存活
     CHK_STATUS(timerQueueAddTimer(pIceAgent->timerQueueHandle, KVS_ICE_DEFAULT_TIMER_START_DELAY, KVS_ICE_SEND_KEEP_ALIVE_INTERVAL,
                                   iceAgentSendKeepAliveTimerCallback, (UINT64) pIceAgent, &pIceAgent->keepAliveTimerTask));
 
@@ -2024,6 +2169,7 @@ CleanUp:
 
     CHK_LOG_ERR(retStatus);
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
@@ -2035,6 +2181,7 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent Nominating 状态设置
 STATUS iceAgentNominatingStateSetup(PIceAgent pIceAgent)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -2042,6 +2189,7 @@ STATUS iceAgentNominatingStateSetup(PIceAgent pIceAgent)
 
     CHK(pIceAgent != NULL, STATUS_NULL_ARG);
 
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     locked = TRUE;
 
@@ -2051,6 +2199,7 @@ STATUS iceAgentNominatingStateSetup(PIceAgent pIceAgent)
         if (pIceAgent->pBindingRequest != NULL) {
             CHK_STATUS(freeStunPacket(&pIceAgent->pBindingRequest));
         }
+        // 创建StunPacket
         CHK_STATUS(createStunPacket(STUN_PACKET_TYPE_BINDING_REQUEST, NULL, &pIceAgent->pBindingRequest));
         CHK_STATUS(appendStunUsernameAttribute(pIceAgent->pBindingRequest, pIceAgent->combinedUserName));
         CHK_STATUS(appendStunPriorityAttribute(pIceAgent->pBindingRequest, 0));
@@ -2064,10 +2213,12 @@ CleanUp:
 
     CHK_LOG_ERR(retStatus);
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
 
+    // 设置错误码
     if (STATUS_FAILED(retStatus)) {
         iceAgentFatalError(pIceAgent, retStatus);
     }
@@ -2075,6 +2226,7 @@ CleanUp:
     return retStatus;
 }
 
+// Ice Ready状态设置
 STATUS iceAgentReadyStateSetup(PIceAgent pIceAgent)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -2087,9 +2239,10 @@ STATUS iceAgentReadyStateSetup(PIceAgent pIceAgent)
 
     CHK(pIceAgent != NULL, STATUS_NULL_ARG);
 
+    // 更新定时器周期
     CHK_STATUS(timerQueueUpdateTimerPeriod(pIceAgent->timerQueueHandle, (UINT64) pIceAgent, pIceAgent->iceAgentStateTimerTask,
                                            KVS_ICE_STATE_READY_TIMER_POLLING_INTERVAL));
-
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     locked = TRUE;
 
@@ -2151,6 +2304,7 @@ CleanUp:
 
     CHK_LOG_ERR(retStatus);
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pIceAgent->lock);
     }
@@ -2221,6 +2375,7 @@ CleanUp:
     return retStatus;
 }
 
+// 将状态不为ICE_CANDIDATE_STATE_VALID的候选，设置为ICE_CANDIDATE_PAIR_STATE_FAILED
 STATUS iceAgentInvalidateCandidatePair(PIceAgent pIceAgent)
 {
     ENTERS();
@@ -2325,6 +2480,7 @@ CleanUp:
     return retStatus;
 }
 
+// 序列化Ice 候选人
 STATUS iceCandidateSerialize(PIceCandidate pIceCandidate, PCHAR pOutputData, PUINT32 pOutputLength)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -2333,13 +2489,16 @@ STATUS iceCandidateSerialize(PIceCandidate pIceCandidate, PCHAR pOutputData, PUI
     CHK(pIceCandidate != NULL && pOutputLength != NULL, STATUS_NULL_ARG);
 
     // TODO FIXME real source of randomness
+    // ipv4
     if (IS_IPV4_ADDR(&(pIceCandidate->ipAddress))) {
         amountWritten = SNPRINTF(pOutputData, pOutputData == NULL ? 0 : *pOutputLength,
                                  "%u 1 udp %u %d.%d.%d.%d %d typ %s raddr 0.0.0.0 rport 0 generation 0 network-cost 999", pIceCandidate->foundation,
                                  pIceCandidate->priority, pIceCandidate->ipAddress.address[0], pIceCandidate->ipAddress.address[1],
                                  pIceCandidate->ipAddress.address[2], pIceCandidate->ipAddress.address[3],
                                  (UINT16) getInt16(pIceCandidate->ipAddress.port), iceAgentGetCandidateTypeStr(pIceCandidate->iceCandidateType));
-    } else {
+    }
+    // ipv6
+    else {
         amountWritten = SNPRINTF(pOutputData, pOutputData == NULL ? 0 : *pOutputLength,
                                  "%u 1 udp %u %02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X:%02X%02X "
                                  "%d typ %s raddr ::/0 rport 0 generation 0 network-cost 999",
@@ -2649,13 +2808,16 @@ CleanUp:
     return retStatus;
 }
 
+// IceAgent 设置错误码
 STATUS iceAgentFatalError(PIceAgent pIceAgent, STATUS errorStatus)
 {
     STATUS retStatus = STATUS_SUCCESS;
     CHK(pIceAgent != NULL, STATUS_NULL_ARG);
 
+    // 加锁
     MUTEX_LOCK(pIceAgent->lock);
     pIceAgent->iceAgentStatus = errorStatus;
+    // 解锁
     MUTEX_UNLOCK(pIceAgent->lock);
 
 CleanUp:
@@ -2663,6 +2825,7 @@ CleanUp:
     return retStatus;
 }
 
+// 日志-发现新的候选人
 VOID iceAgentLogNewCandidate(PIceCandidate pIceCandidate)
 {
     CHAR ipAddr[KVS_IP_ADDRESS_STRING_BUFFER_LEN];
@@ -2691,6 +2854,7 @@ VOID iceAgentLogNewCandidate(PIceCandidate pIceCandidate)
     }
 }
 
+// 更新候选人地址
 STATUS updateCandidateAddress(PIceCandidate pIceCandidate, PKvsIpAddress pIpAddr)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -2707,6 +2871,7 @@ CleanUp:
     return retStatus;
 }
 
+// 计算候选人优先级
 UINT32 computeCandidatePriority(PIceCandidate pIceCandidate)
 {
     UINT32 typePreference = 0, localPreference = 0;
@@ -2741,6 +2906,7 @@ UINT32 computeCandidatePriority(PIceCandidate pIceCandidate)
     return (1 << 24) * (typePreference) + (1 << 8) * (localPreference) + 255;
 }
 
+// 计算候选对优先级
 UINT64 computeCandidatePairPriority(PIceCandidatePair pIceCandidatePair, BOOL isLocalControlling)
 {
     UINT64 controllingAgentCandidatePri = pIceCandidatePair->local->priority;
@@ -2756,6 +2922,7 @@ UINT64 computeCandidatePairPriority(PIceCandidatePair pIceCandidatePair, BOOL is
         2 * MAX(controlledAgentCandidatePri, controllingAgentCandidatePri) + (controllingAgentCandidatePri > controlledAgentCandidatePri ? 1 : 0);
 }
 
+// Ice Agent 获取候选人类型string
 PCHAR iceAgentGetCandidateTypeStr(ICE_CANDIDATE_TYPE candidateType)
 {
     switch (candidateType) {
@@ -2771,6 +2938,7 @@ PCHAR iceAgentGetCandidateTypeStr(ICE_CANDIDATE_TYPE candidateType)
     return SDP_CANDIDATE_TYPE_UNKNOWN;
 }
 
+// IceAgent获取当前时间
 UINT64 iceAgentGetCurrentTime(UINT64 customData)
 {
     UNUSED_PARAM(customData);

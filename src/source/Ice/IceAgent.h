@@ -76,18 +76,23 @@ extern "C" {
 
 #define KVS_ICE_DEFAULT_TURN_PROTOCOL KVS_SOCKET_PROTOCOL_TCP
 
+// ICE hash 表
 #define ICE_HASH_TABLE_BUCKET_COUNT  100
 #define ICE_HASH_TABLE_BUCKET_LENGTH 2
 
+// ICE 候选ID长度
 #define ICE_CANDIDATE_ID_LEN 8
 
 #define STATS_NOT_APPLICABLE_STR (PCHAR) "N/A"
+
+// ICE 候选状态
 typedef enum {
     ICE_CANDIDATE_STATE_NEW,
     ICE_CANDIDATE_STATE_VALID,
     ICE_CANDIDATE_STATE_INVALID,
 } ICE_CANDIDATE_STATE;
 
+// ICE 回调函数
 typedef VOID (*IceInboundPacketFunc)(UINT64, PBYTE, UINT32);
 typedef VOID (*IceConnectionStateChangedFunc)(UINT64, UINT64);
 typedef VOID (*IceNewLocalCandidateFunc)(UINT64, PCHAR);
