@@ -639,6 +639,7 @@ CleanUp:
     return retStatus;
 }
 
+// rtcp报告回调
 STATUS rtcpReportsCallback(UINT32 timerId, UINT64 currentTime, UINT64 customData)
 {
     UNUSED_PARAM(timerId);
@@ -667,9 +668,11 @@ STATUS rtcpReportsCallback(UINT32 timerId, UINT64 currentTime, UINT64 customData
         ntpTime = convertTimestampToNTP(currentTime);
         rtpTime = pKvsRtpTransceiver->sender.rtpTimeOffset +
             CONVERT_TIMESTAMP_TO_RTP(pKvsRtpTransceiver->pJitterBuffer->clockRate, currentTime - pKvsRtpTransceiver->sender.firstFrameWallClockTime);
+        // 加锁
         MUTEX_LOCK(pKvsRtpTransceiver->statsLock);
         packetCount = pKvsRtpTransceiver->outboundStats.sent.packetsSent;
         octetCount = pKvsRtpTransceiver->outboundStats.sent.bytesSent;
+        // 解锁
         MUTEX_UNLOCK(pKvsRtpTransceiver->statsLock);
         DLOGV("sender report %u %" PRIu64 " %" PRIu64 " : %u packets %u bytes", ssrc, ntpTime, rtpTime, packetCount, octetCount);
         packetLen = RTCP_PACKET_HEADER_LEN + 24;
@@ -704,6 +707,7 @@ CleanUp:
     return retStatus;
 }
 
+// 创建PeerConnection
 STATUS createPeerConnection(PRtcConfiguration pConfiguration, PRtcPeerConnection* ppPeerConnection)
 {
     ENTERS();
@@ -721,38 +725,49 @@ STATUS createPeerConnection(PRtcConfiguration pConfiguration, PRtcPeerConnection
     pKvsPeerConnection = (PKvsPeerConnection) MEMCALLOC(1, SIZEOF(KvsPeerConnection));
     CHK(pKvsPeerConnection != NULL, STATUS_NOT_ENOUGH_MEMORY);
 
+    // 创建定时器队列
     CHK_STATUS(timerQueueCreate(&pKvsPeerConnection->timerQueueHandle));
 
     pKvsPeerConnection->peerConnection.version = PEER_CONNECTION_CURRENT_VERSION;
+    // 设置 用户名、密码、同步源别名
     CHK_STATUS(generateJSONSafeString(pKvsPeerConnection->localIceUfrag, LOCAL_ICE_UFRAG_LEN));
     CHK_STATUS(generateJSONSafeString(pKvsPeerConnection->localIcePwd, LOCAL_ICE_PWD_LEN));
     CHK_STATUS(generateJSONSafeString(pKvsPeerConnection->localCNAME, LOCAL_CNAME_LEN));
 
+    // 创建DtlsSession
     CHK_STATUS(createDtlsSession(
         &dtlsSessionCallbacks, pKvsPeerConnection->timerQueueHandle, pConfiguration->kvsRtcConfiguration.generatedCertificateBits,
         pConfiguration->kvsRtcConfiguration.generateRSACertificate, pConfiguration->certificates, &pKvsPeerConnection->pDtlsSession));
+    // 设置dtls回调
     CHK_STATUS(dtlsSessionOnOutBoundData(pKvsPeerConnection->pDtlsSession, (UINT64) pKvsPeerConnection, onDtlsOutboundPacket));
     CHK_STATUS(dtlsSessionOnStateChange(pKvsPeerConnection->pDtlsSession, (UINT64) pKvsPeerConnection, onDtlsStateChange));
 
+    // 创建hash表
     CHK_STATUS(hashTableCreateWithParams(CODEC_HASH_TABLE_BUCKET_COUNT, CODEC_HASH_TABLE_BUCKET_LENGTH, &pKvsPeerConnection->pCodecTable));
     CHK_STATUS(hashTableCreateWithParams(CODEC_HASH_TABLE_BUCKET_COUNT, CODEC_HASH_TABLE_BUCKET_LENGTH, &pKvsPeerConnection->pDataChannels));
     CHK_STATUS(hashTableCreateWithParams(RTX_HASH_TABLE_BUCKET_COUNT, RTX_HASH_TABLE_BUCKET_LENGTH, &pKvsPeerConnection->pRtxTable));
+    // 创建储存收发器的双向链表
     CHK_STATUS(doubleListCreate(&(pKvsPeerConnection->pTransceivers)));
 
+    // 创建锁资源
     pKvsPeerConnection->pSrtpSessionLock = MUTEX_CREATE(TRUE);
     pKvsPeerConnection->peerConnectionObjLock = MUTEX_CREATE(FALSE);
     pKvsPeerConnection->connectionState = RTC_PEER_CONNECTION_STATE_NONE;
+    // 设置MTU大小
     pKvsPeerConnection->MTU = pConfiguration->kvsRtcConfiguration.maximumTransmissionUnit == 0
         ? DEFAULT_MTU_SIZE
         : pConfiguration->kvsRtcConfiguration.maximumTransmissionUnit;
     pKvsPeerConnection->sctpIsEnabled = FALSE;
 
     iceAgentCallbacks.customData = (UINT64) pKvsPeerConnection;
+    // 设置回调
     iceAgentCallbacks.inboundPacketFn = onInboundPacket;
     iceAgentCallbacks.connectionStateChangedFn = onIceConnectionStateChange;
     iceAgentCallbacks.newLocalCandidateFn = onNewIceLocalCandidate;
+    // 创建ConnectionListener
     CHK_STATUS(createConnectionListener(&pConnectionListener));
     // IceAgent will own the lifecycle of pConnectionListener;
+    // 创建IceAgent
     CHK_STATUS(createIceAgent(pKvsPeerConnection->localIceUfrag, pKvsPeerConnection->localIcePwd, &iceAgentCallbacks, pConfiguration,
                               pKvsPeerConnection->timerQueueHandle, pConnectionListener, &pKvsPeerConnection->pIceAgent));
 
@@ -769,6 +784,7 @@ CleanUp:
 
     CHK_LOG_ERR(retStatus);
 
+    // 回收PeerConnection资源
     if (STATUS_FAILED(retStatus)) {
         freePeerConnection((PRtcPeerConnection*) &pKvsPeerConnection);
     }
@@ -777,6 +793,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收HashEntry资源
 STATUS freeHashEntry(UINT64 customData, PHashEntry pHashEntry)
 {
     UNUSED_PARAM(customData);
@@ -787,6 +804,7 @@ STATUS freeHashEntry(UINT64 customData, PHashEntry pHashEntry)
 /*
  * NOT thread-safe
  */
+// 回收PeerConnection（线程不安全）
 STATUS freePeerConnection(PRtcPeerConnection* ppPeerConnection)
 {
     ENTERS();
@@ -803,19 +821,24 @@ STATUS freePeerConnection(PRtcPeerConnection* ppPeerConnection)
 
     /* Shutdown IceAgent first so there is no more incoming packets which can cause
      * SCTP to be allocated again after SCTP is freed. */
+    // 关闭ICE Agent
     CHK_LOG_ERR(iceAgentShutdown(pKvsPeerConnection->pIceAgent));
 
     // free timer queue first to remove liveness provided by timer
+    // 关闭定时器队列
     if (IS_VALID_TIMER_QUEUE_HANDLE(pKvsPeerConnection->timerQueueHandle)) {
         timerQueueShutdown(pKvsPeerConnection->timerQueueHandle);
     }
 
     /* Free structs that have their own thread. SCTP has threads created by SCTP library. IceAgent has the
      * connectionListener thread. Free SCTP first so it wont try to send anything through ICE. */
+    // 回收SctpSession资源
     CHK_LOG_ERR(freeSctpSession(&pKvsPeerConnection->pSctpSession));
+    // 回收IceAgent资源
     CHK_LOG_ERR(freeIceAgent(&pKvsPeerConnection->pIceAgent));
 
     // free transceivers
+    // 回收收发器资源
     CHK_LOG_ERR(doubleListGetHeadNode(pKvsPeerConnection->pTransceivers, &pCurNode));
     while (pCurNode != NULL) {
         CHK_LOG_ERR(doubleListGetNodeData(pCurNode, &item));
@@ -825,15 +848,21 @@ STATUS freePeerConnection(PRtcPeerConnection* ppPeerConnection)
     }
 
     // Free DataChannels
+    // 回收DataChannels资源
     CHK_LOG_ERR(hashTableIterateEntries(pKvsPeerConnection->pDataChannels, 0, freeHashEntry));
     CHK_LOG_ERR(hashTableFree(pKvsPeerConnection->pDataChannels));
 
     // free rest of structs
+    // 回收srtpSession资源
     CHK_LOG_ERR(freeSrtpSession(&pKvsPeerConnection->pSrtpSession));
+    // 回收DtlsSession 资源
     CHK_LOG_ERR(freeDtlsSession(&pKvsPeerConnection->pDtlsSession));
+    // 回收收发器链表资源
     CHK_LOG_ERR(doubleListFree(pKvsPeerConnection->pTransceivers));
+    // 回收编解码、重发哈希表资源
     CHK_LOG_ERR(hashTableFree(pKvsPeerConnection->pCodecTable));
     CHK_LOG_ERR(hashTableFree(pKvsPeerConnection->pRtxTable));
+    // 回收锁资源
     if (IS_VALID_MUTEX_VALUE(pKvsPeerConnection->pSrtpSessionLock)) {
         MUTEX_FREE(pKvsPeerConnection->pSrtpSessionLock);
     }
@@ -842,10 +871,12 @@ STATUS freePeerConnection(PRtcPeerConnection* ppPeerConnection)
         MUTEX_FREE(pKvsPeerConnection->peerConnectionObjLock);
     }
 
+    // 回收定时器队列资源
     if (IS_VALID_TIMER_QUEUE_HANDLE(pKvsPeerConnection->timerQueueHandle)) {
         timerQueueFree(&pKvsPeerConnection->timerQueueHandle);
     }
 
+    // 回收TwccManager资源
     if (pKvsPeerConnection->pTwccManager != NULL) {
         if (IS_VALID_MUTEX_VALUE(pKvsPeerConnection->twccLock)) {
             MUTEX_FREE(pKvsPeerConnection->twccLock);
@@ -864,6 +895,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置PeerConnection IceCandidate回调
 STATUS peerConnectionOnIceCandidate(PRtcPeerConnection pRtcPeerConnection, UINT64 customData, RtcOnIceCandidate rtcOnIceCandidate)
 {
     ENTERS();
@@ -873,14 +905,17 @@ STATUS peerConnectionOnIceCandidate(PRtcPeerConnection pRtcPeerConnection, UINT6
 
     CHK(pKvsPeerConnection != NULL && rtcOnIceCandidate != NULL, STATUS_NULL_ARG);
 
+    // 加锁
     MUTEX_LOCK(pKvsPeerConnection->peerConnectionObjLock);
     locked = TRUE;
 
+    // 设置回调函数、数据
     pKvsPeerConnection->onIceCandidate = rtcOnIceCandidate;
     pKvsPeerConnection->onIceCandidateCustomData = customData;
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pKvsPeerConnection->peerConnectionObjLock);
     }
@@ -889,6 +924,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置PeerConnection DataChannel回调
 STATUS peerConnectionOnDataChannel(PRtcPeerConnection pRtcPeerConnection, UINT64 customData, RtcOnDataChannel rtcOnDataChannel)
 {
     ENTERS();
@@ -898,14 +934,17 @@ STATUS peerConnectionOnDataChannel(PRtcPeerConnection pRtcPeerConnection, UINT64
 
     CHK(pKvsPeerConnection != NULL && rtcOnDataChannel != NULL, STATUS_NULL_ARG);
 
+    // 加锁
     MUTEX_LOCK(pKvsPeerConnection->peerConnectionObjLock);
     locked = TRUE;
 
+    // 设置回调函数、数据
     pKvsPeerConnection->onDataChannel = rtcOnDataChannel;
     pKvsPeerConnection->onDataChannelCustomData = customData;
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pKvsPeerConnection->peerConnectionObjLock);
     }
@@ -914,6 +953,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置 peerConnection ConnectionStateChange回调
 STATUS peerConnectionOnConnectionStateChange(PRtcPeerConnection pRtcPeerConnection, UINT64 customData,
                                              RtcOnConnectionStateChange rtcOnConnectionStateChange)
 {
@@ -924,14 +964,17 @@ STATUS peerConnectionOnConnectionStateChange(PRtcPeerConnection pRtcPeerConnecti
 
     CHK(pKvsPeerConnection != NULL && rtcOnConnectionStateChange != NULL, STATUS_NULL_ARG);
 
+    // 解锁
     MUTEX_LOCK(pKvsPeerConnection->peerConnectionObjLock);
     locked = TRUE;
 
+    // 设置回调函数、数据
     pKvsPeerConnection->onConnectionStateChange = rtcOnConnectionStateChange;
     pKvsPeerConnection->onConnectionStateChangeCustomData = customData;
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pKvsPeerConnection->peerConnectionObjLock);
     }
@@ -940,6 +983,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置peerConnection 发送者带宽估计回调
 STATUS peerConnectionOnSenderBandwidthEstimation(PRtcPeerConnection pRtcPeerConnection, UINT64 customData,
                                                  RtcOnSenderBandwidthEstimation rtcOnSenderBandwidthEstimation)
 {
@@ -950,14 +994,17 @@ STATUS peerConnectionOnSenderBandwidthEstimation(PRtcPeerConnection pRtcPeerConn
 
     CHK(pKvsPeerConnection != NULL && rtcOnSenderBandwidthEstimation != NULL, STATUS_NULL_ARG);
 
+    // 加锁
     MUTEX_LOCK(pKvsPeerConnection->peerConnectionObjLock);
     locked = TRUE;
 
+    // 设置回调函数、数据
     pKvsPeerConnection->onSenderBandwidthEstimation = rtcOnSenderBandwidthEstimation;
     pKvsPeerConnection->onSenderBandwidthEstimationCustomData = customData;
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pKvsPeerConnection->peerConnectionObjLock);
     }
@@ -966,6 +1013,7 @@ CleanUp:
     return retStatus;
 }
 
+// peerConnection 获取本地描述
 STATUS peerConnectionGetLocalDescription(PRtcPeerConnection pRtcPeerConnection, PRtcSessionDescriptionInit pRtcSessionDescriptionInit)
 {
     ENTERS();
@@ -978,16 +1026,21 @@ STATUS peerConnectionGetLocalDescription(PRtcPeerConnection pRtcPeerConnection, 
 
     CHK(NULL != (pSessionDescription = (PSessionDescription) MEMCALLOC(1, SIZEOF(SessionDescription))), STATUS_NOT_ENOUGH_MEMORY);
 
+    // offer
     if (pKvsPeerConnection->isOffer) {
         pRtcSessionDescriptionInit->type = SDP_TYPE_OFFER;
-    } else {
+    }
+    // answer
+    else {
         pRtcSessionDescriptionInit->type = SDP_TYPE_ANSWER;
     }
 
+    // 填充SDP
     CHK_STATUS(populateSessionDescription(pKvsPeerConnection, &(pKvsPeerConnection->remoteSessionDescription), pSessionDescription));
+    // 获取SDP长度
     CHK_STATUS(serializeSessionDescription(pSessionDescription, NULL, &serializeLen));
     CHK(serializeLen <= MAX_SESSION_DESCRIPTION_INIT_SDP_LEN, STATUS_NOT_ENOUGH_MEMORY);
-
+    // 序列化SDP
     CHK_STATUS(serializeSessionDescription(pSessionDescription, pRtcSessionDescriptionInit->sdp, &serializeLen));
 
 CleanUp:
@@ -998,6 +1051,7 @@ CleanUp:
     return retStatus;
 }
 
+// peerConnection 获取当前本地描述
 STATUS peerConnectionGetCurrentLocalDescription(PRtcPeerConnection pRtcPeerConnection, PRtcSessionDescriptionInit pRtcSessionDescriptionInit)
 {
     ENTERS();
@@ -1012,11 +1066,13 @@ STATUS peerConnectionGetCurrentLocalDescription(PRtcPeerConnection pRtcPeerConne
 
     CHK(NULL != (pSessionDescription = (PSessionDescription) MEMCALLOC(1, SIZEOF(SessionDescription))), STATUS_NOT_ENOUGH_MEMORY);
 
+    // 填充SDP
     CHK_STATUS(populateSessionDescription(pKvsPeerConnection, &(pKvsPeerConnection->remoteSessionDescription), pSessionDescription));
-
+    // 获取SDP序列化长度
     CHK_STATUS(serializeSessionDescription(pSessionDescription, NULL, &serializeLen));
     CHK(serializeLen <= MAX_SESSION_DESCRIPTION_INIT_SDP_LEN, STATUS_NOT_ENOUGH_MEMORY);
 
+    // 序列化SDP
     CHK_STATUS(serializeSessionDescription(pSessionDescription, pRtcSessionDescriptionInit->sdp, &serializeLen));
 
 CleanUp:
@@ -1163,12 +1219,16 @@ STATUS createOffer(PRtcPeerConnection pPeerConnection, PRtcSessionDescriptionIni
 #ifdef ENABLE_DATA_CHANNEL
     pKvsPeerConnection->sctpIsEnabled = TRUE;
 #endif
+    // 设置payloadType
     CHK_STATUS(setPayloadTypesForOffer(pKvsPeerConnection->pCodecTable));
 
+    // 填充SDP
     CHK_STATUS(populateSessionDescription(pKvsPeerConnection, &(pKvsPeerConnection->remoteSessionDescription), pSessionDescription));
+    // 获取SDP序列化长度
     CHK_STATUS(serializeSessionDescription(pSessionDescription, NULL, &serializeLen));
     CHK(serializeLen <= MAX_SESSION_DESCRIPTION_INIT_SDP_LEN, STATUS_NOT_ENOUGH_MEMORY);
 
+    // 序列化SDP
     CHK_STATUS(serializeSessionDescription(pSessionDescription, pSessionDescriptionInit->sdp, &serializeLen));
 
     // If embedded SDK acts as the viewer
@@ -1196,6 +1256,7 @@ STATUS createAnswer(PRtcPeerConnection pPeerConnection, PRtcSessionDescriptionIn
 
     pSessionDescriptionInit->type = SDP_TYPE_ANSWER;
 
+    // 获取当前本地描述
     CHK_STATUS(peerConnectionGetCurrentLocalDescription(pPeerConnection, pSessionDescriptionInit));
 
     // If embedded SDK acts as the master
@@ -1400,6 +1461,7 @@ CleanUp:
     return retStatus;
 }
 
+// 是否支持TrickleIceCandidate
 PUBLIC_API NullableBool canTrickleIceCandidates(PRtcPeerConnection pPeerConnection)
 {
     NullableBool canTrickle = {FALSE, FALSE};
@@ -1470,6 +1532,7 @@ CleanUp:
     return retStatus;
 }
 
+// 
 STATUS twccManagerOnPacketSent(PKvsPeerConnection pc, PRtpPacket pRtpPacket)
 {
     ENTERS();
@@ -1483,9 +1546,11 @@ STATUS twccManagerOnPacketSent(PKvsPeerConnection pc, PRtpPacket pRtpPacket)
     CHK(pc->onSenderBandwidthEstimation != NULL && pc->pTwccManager != NULL, STATUS_SUCCESS);
     CHK(TWCC_EXT_PROFILE == pRtpPacket->header.extensionProfile, STATUS_SUCCESS);
 
+    // 加锁
     MUTEX_LOCK(pc->twccLock);
     locked = TRUE;
 
+    // 获取序列号
     seqNum = TWCC_SEQNUM(pRtpPacket->header.extensionPayload);
     CHK_STATUS(stackQueueEnqueue(&pc->pTwccManager->twccPackets, seqNum));
     pc->pTwccManager->twccPacketBySeqNum[seqNum].seqNum = seqNum;
@@ -1495,6 +1560,7 @@ STATUS twccManagerOnPacketSent(PKvsPeerConnection pc, PRtpPacket pRtpPacket)
     pc->pTwccManager->lastLocalTimeKvs = pRtpPacket->sentTime;
 
     // cleanup queue until it contains up to 2 seconds of sent packets
+    // 清理队列(只包含2s的发送数据)
     do {
         CHK_STATUS(stackQueuePeek(&pc->pTwccManager->twccPackets, &sn));
         firstTimeKvs = pc->pTwccManager->twccPacketBySeqNum[(UINT16) sn].localTimeKvs;
@@ -1509,6 +1575,7 @@ STATUS twccManagerOnPacketSent(PKvsPeerConnection pc, PRtpPacket pRtpPacket)
     } while (!isEmpty);
 
 CleanUp:
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pc->twccLock);
     }

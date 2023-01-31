@@ -19,6 +19,7 @@ STATUS signalingCallFailed(STATUS status)
             STATUS_SIGNALING_GET_ICE_CONFIG_CALL_FAILED == status || STATUS_SIGNALING_CONNECT_CALL_FAILED == status);
 }
 
+// 数据通道Message回调
 VOID onDataChannelMessage(UINT64 customData, PRtcDataChannel pDataChannel, BOOL isBinary, PBYTE pMessage, UINT32 pMessageLen)
 {
     UNUSED_PARAM(customData);
@@ -30,18 +31,22 @@ VOID onDataChannelMessage(UINT64 customData, PRtcDataChannel pDataChannel, BOOL 
     }
     // Send a response to the message sent by the viewer
     STATUS retStatus = STATUS_SUCCESS;
+    // 发送数据
     retStatus = dataChannelSend(pDataChannel, FALSE, (PBYTE) MASTER_DATA_CHANNEL_MESSAGE, STRLEN(MASTER_DATA_CHANNEL_MESSAGE));
     if (retStatus != STATUS_SUCCESS) {
         DLOGI("[KVS Master] dataChannelSend(): operation returned status code: 0x%08x \n", retStatus);
     }
 }
 
+// 设置数据通道Message回调
 VOID onDataChannel(UINT64 customData, PRtcDataChannel pRtcDataChannel)
 {
     DLOGI("New DataChannel has been opened %s \n", pRtcDataChannel->name);
+    // 设置回调函数、数据
     dataChannelOnMessage(pRtcDataChannel, customData, onDataChannelMessage);
 }
 
+// 连接状态改变回调
 VOID onConnectionStateChange(UINT64 customData, RTC_PEER_CONNECTION_STATE newState)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -54,8 +59,10 @@ VOID onConnectionStateChange(UINT64 customData, RTC_PEER_CONNECTION_STATE newSta
 
     switch (newState) {
         case RTC_PEER_CONNECTION_STATE_CONNECTED:
+            // 设置已连接状态
             ATOMIC_STORE_BOOL(&pSampleConfiguration->connected, TRUE);
             CVAR_BROADCAST(pSampleConfiguration->cvar);
+            // 打印日志
             if (STATUS_FAILED(retStatus = logSelectedIceCandidatesInformation(pSampleStreamingSession))) {
                 DLOGW("Failed to get information about selected Ice candidates: 0x%08x", retStatus);
             }
@@ -79,12 +86,14 @@ CleanUp:
     CHK_LOG_ERR(retStatus);
 }
 
+// 信令客户端状态改变(打印日志)
 STATUS signalingClientStateChanged(UINT64 customData, SIGNALING_CLIENT_STATE state)
 {
     UNUSED_PARAM(customData);
     STATUS retStatus = STATUS_SUCCESS;
     PCHAR pStateStr;
 
+    // 获取信令客户端状态(string)
     signalingClientGetStateString(state, &pStateStr);
 
     DLOGV("Signaling client state changed to %d - '%s'", state, pStateStr);
@@ -93,6 +102,7 @@ STATUS signalingClientStateChanged(UINT64 customData, SIGNALING_CLIENT_STATE sta
     return retStatus;
 }
 
+// 信令客户端错误处理
 STATUS signalingClientError(UINT64 customData, STATUS status, PCHAR msg, UINT32 msgLen)
 {
     PSampleConfiguration pSampleConfiguration = (PSampleConfiguration) customData;
@@ -100,6 +110,7 @@ STATUS signalingClientError(UINT64 customData, STATUS status, PCHAR msg, UINT32 
     DLOGW("Signaling client generated an error 0x%08x - '%.*s'", status, msgLen, msg);
 
     // We will force re-create the signaling client on the following errors
+    // 强制重新创建信令客户端
     if (status == STATUS_SIGNALING_ICE_CONFIG_REFRESH_FAILED || status == STATUS_SIGNALING_RECONNECT_FAILED) {
         ATOMIC_STORE_BOOL(&pSampleConfiguration->recreateSignalingClient, TRUE);
         CVAR_BROADCAST(pSampleConfiguration->cvar);
@@ -108,6 +119,7 @@ STATUS signalingClientError(UINT64 customData, STATUS status, PCHAR msg, UINT32 
     return STATUS_SUCCESS;
 }
 
+// 记录日志(local/remote Candidate)
 STATUS logSelectedIceCandidatesInformation(PSampleStreamingSession pSampleStreamingSession)
 {
     ENTERS();
@@ -115,7 +127,9 @@ STATUS logSelectedIceCandidatesInformation(PSampleStreamingSession pSampleStream
     RtcStats rtcMetrics;
 
     CHK(pSampleStreamingSession != NULL, STATUS_NULL_ARG);
+    // 本地
     rtcMetrics.requestedTypeOfStats = RTC_STATS_TYPE_LOCAL_CANDIDATE;
+    // 获取Metrics
     CHK_STATUS(rtcPeerConnectionGetMetrics(pSampleStreamingSession->pPeerConnection, NULL, &rtcMetrics));
     DLOGD("Local Candidate IP Address: %s", rtcMetrics.rtcStatsObject.localIceCandidateStats.address);
     DLOGD("Local Candidate type: %s", rtcMetrics.rtcStatsObject.localIceCandidateStats.candidateType);
@@ -125,7 +139,9 @@ STATUS logSelectedIceCandidatesInformation(PSampleStreamingSession pSampleStream
     DLOGD("Local Candidate relay protocol: %s", rtcMetrics.rtcStatsObject.localIceCandidateStats.relayProtocol);
     DLOGD("Local Candidate Ice server source: %s", rtcMetrics.rtcStatsObject.localIceCandidateStats.url);
 
+    // 远程
     rtcMetrics.requestedTypeOfStats = RTC_STATS_TYPE_REMOTE_CANDIDATE;
+    // 获取Metrics
     CHK_STATUS(rtcPeerConnectionGetMetrics(pSampleStreamingSession->pPeerConnection, NULL, &rtcMetrics));
     DLOGD("Remote Candidate IP Address: %s", rtcMetrics.rtcStatsObject.remoteIceCandidateStats.address);
     DLOGD("Remote Candidate type: %s", rtcMetrics.rtcStatsObject.remoteIceCandidateStats.candidateType);
@@ -137,6 +153,7 @@ CleanUp:
     return retStatus;
 }
 
+// answer 处理
 STATUS handleAnswer(PSampleConfiguration pSampleConfiguration, PSampleStreamingSession pSampleStreamingSession, PSignalingMessage pSignalingMessage)
 {
     UNUSED_PARAM(pSampleConfiguration);
@@ -145,7 +162,9 @@ STATUS handleAnswer(PSampleConfiguration pSampleConfiguration, PSampleStreamingS
 
     MEMSET(&answerSessionDescriptionInit, 0x00, SIZEOF(RtcSessionDescriptionInit));
 
+    // 反序列化answer(json-->结构体)
     CHK_STATUS(deserializeSessionDescriptionInit(pSignalingMessage->payload, pSignalingMessage->payloadLen, &answerSessionDescriptionInit));
+    // 设置远程描述
     CHK_STATUS(setRemoteDescription(pSampleStreamingSession->pPeerConnection, &answerSessionDescriptionInit));
 
 CleanUp:
@@ -155,32 +174,40 @@ CleanUp:
     return retStatus;
 }
 
+// 媒体发送线程(函数)
 PVOID mediaSenderRoutine(PVOID customData)
 {
     STATUS retStatus = STATUS_SUCCESS;
     PSampleConfiguration pSampleConfiguration = (PSampleConfiguration) customData;
     TID videoSenderTid = INVALID_TID_VALUE, audioSenderTid = INVALID_TID_VALUE;
 
+    // 加锁
     MUTEX_LOCK(pSampleConfiguration->sampleConfigurationObjLock);
+    // 等待连接、等待appTerminateFlag为true
     while (!ATOMIC_LOAD_BOOL(&pSampleConfiguration->connected) && !ATOMIC_LOAD_BOOL(&pSampleConfiguration->appTerminateFlag)) {
         CVAR_WAIT(pSampleConfiguration->cvar, pSampleConfiguration->sampleConfigurationObjLock, 5 * HUNDREDS_OF_NANOS_IN_A_SECOND);
     }
+    // 解锁
     MUTEX_UNLOCK(pSampleConfiguration->sampleConfigurationObjLock);
 
     CHK(!ATOMIC_LOAD_BOOL(&pSampleConfiguration->appTerminateFlag), retStatus);
 
+    // 创建视频发送线程
     if (pSampleConfiguration->videoSource != NULL) {
         THREAD_CREATE(&videoSenderTid, pSampleConfiguration->videoSource, (PVOID) pSampleConfiguration);
     }
 
+    // 创建音频发送线程
     if (pSampleConfiguration->audioSource != NULL) {
         THREAD_CREATE(&audioSenderTid, pSampleConfiguration->audioSource, (PVOID) pSampleConfiguration);
     }
 
+    // 回收视频发送线程资源
     if (videoSenderTid != INVALID_TID_VALUE) {
         THREAD_JOIN(videoSenderTid, NULL);
     }
 
+    // 回收音频发送线程资源
     if (audioSenderTid != INVALID_TID_VALUE) {
         THREAD_JOIN(audioSenderTid, NULL);
     }
@@ -192,6 +219,7 @@ CleanUp:
     return NULL;
 }
 
+// offer处理
 STATUS handleOffer(PSampleConfiguration pSampleConfiguration, PSampleStreamingSession pSampleStreamingSession, PSignalingMessage pSignalingMessage)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -204,30 +232,38 @@ STATUS handleOffer(PSampleConfiguration pSampleConfiguration, PSampleStreamingSe
     MEMSET(&offerSessionDescriptionInit, 0x00, SIZEOF(RtcSessionDescriptionInit));
     MEMSET(&pSampleStreamingSession->answerSessionDescriptionInit, 0x00, SIZEOF(RtcSessionDescriptionInit));
 
+    // 反序列化offer
     CHK_STATUS(deserializeSessionDescriptionInit(pSignalingMessage->payload, pSignalingMessage->payloadLen, &offerSessionDescriptionInit));
+    // 设置远程描述
     CHK_STATUS(setRemoteDescription(pSampleStreamingSession->pPeerConnection, &offerSessionDescriptionInit));
+    // 是否支持TrickleIceCandidate
     canTrickle = canTrickleIceCandidates(pSampleStreamingSession->pPeerConnection);
     /* cannot be null after setRemoteDescription */
     CHECK(!NULLABLE_CHECK_EMPTY(canTrickle));
     pSampleStreamingSession->remoteCanTrickleIce = canTrickle.value;
+    // 设置本地描述
     CHK_STATUS(setLocalDescription(pSampleStreamingSession->pPeerConnection, &pSampleStreamingSession->answerSessionDescriptionInit));
 
     /*
      * If remote support trickle ice, send answer now. Otherwise answer will be sent once ice candidate gathering is complete.
      */
+    // 若远端支持TrickleIce 直接发送answer,否则等候选收集完成发送
     if (pSampleStreamingSession->remoteCanTrickleIce) {
         CHK_STATUS(createAnswer(pSampleStreamingSession->pPeerConnection, &pSampleStreamingSession->answerSessionDescriptionInit));
+        // 响应answer
         CHK_STATUS(respondWithAnswer(pSampleStreamingSession));
         DLOGD("time taken to send answer %" PRIu64 " ms",
               (GETTIME() - pSampleStreamingSession->offerReceiveTime) / HUNDREDS_OF_NANOS_IN_A_MILLISECOND);
     }
 
     mediaThreadStarted = ATOMIC_EXCHANGE_BOOL(&pSampleConfiguration->mediaThreadStarted, TRUE);
+    // 创建音/视频发送线程
     if (!mediaThreadStarted) {
         THREAD_CREATE(&pSampleConfiguration->mediaSenderTid, mediaSenderRoutine, (PVOID) pSampleConfiguration);
     }
 
     // The audio video receive routine should be per streaming session
+    // 创建视频、音频接收线程
     if (pSampleConfiguration->receiveAudioVideoSource != NULL) {
         THREAD_CREATE(&pSampleStreamingSession->receiveAudioVideoSenderTid, pSampleConfiguration->receiveAudioVideoSource,
                       (PVOID) pSampleStreamingSession);
@@ -239,6 +275,7 @@ CleanUp:
     return retStatus;
 }
 
+// 发送信令消息
 STATUS sendSignalingMessage(PSampleStreamingSession pSampleStreamingSession, PSignalingMessage pMessage)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -250,12 +287,15 @@ STATUS sendSignalingMessage(PSampleStreamingSession pSampleStreamingSession, PSi
             IS_VALID_SIGNALING_CLIENT_HANDLE(pSampleStreamingSession->pSampleConfiguration->signalingClientHandle),
         STATUS_INVALID_OPERATION);
 
+    // 加锁
     MUTEX_LOCK(pSampleStreamingSession->pSampleConfiguration->signalingSendMessageLock);
     locked = TRUE;
+    // 发送消息
     CHK_STATUS(signalingClientSendMessageSync(pSampleStreamingSession->pSampleConfiguration->signalingClientHandle, pMessage));
 
 CleanUp:
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSampleStreamingSession->pSampleConfiguration->signalingSendMessageLock);
     }
@@ -264,12 +304,14 @@ CleanUp:
     return retStatus;
 }
 
+// 发送answer(响应offer)
 STATUS respondWithAnswer(PSampleStreamingSession pSampleStreamingSession)
 {
     STATUS retStatus = STATUS_SUCCESS;
     SignalingMessage message;
     UINT32 buffLen = MAX_SIGNALING_MESSAGE_LEN;
 
+    // 序列化answer(结构-->json)
     CHK_STATUS(serializeSessionDescriptionInit(&pSampleStreamingSession->answerSessionDescriptionInit, message.payload, &buffLen));
 
     message.version = SIGNALING_MESSAGE_CURRENT_VERSION;
@@ -278,6 +320,7 @@ STATUS respondWithAnswer(PSampleStreamingSession pSampleStreamingSession)
     message.payloadLen = (UINT32) STRLEN(message.payload);
     message.correlationId[0] = '\0';
 
+    // 发送answer
     CHK_STATUS(sendSignalingMessage(pSampleStreamingSession, &message));
 
 CleanUp:
@@ -286,6 +329,7 @@ CleanUp:
     return retStatus;
 }
 
+// 过滤网卡
 BOOL sampleFilterNetworkInterfaces(UINT64 customData, PCHAR networkInt)
 {
     UNUSED_PARAM(customData);
@@ -297,6 +341,7 @@ BOOL sampleFilterNetworkInterfaces(UINT64 customData, PCHAR networkInt)
     return useInterface;
 }
 
+// IceCandidate处理器
 VOID onIceCandidateHandler(UINT64 customData, PCHAR candidateJson)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -336,6 +381,7 @@ CleanUp:
     CHK_LOG_ERR(retStatus);
 }
 
+// 初始化PeerConnection
 STATUS initializePeerConnection(PSampleConfiguration pSampleConfiguration, PRtcPeerConnection* ppRtcPeerConnection)
 {
     ENTERS();
@@ -351,14 +397,18 @@ STATUS initializePeerConnection(PSampleConfiguration pSampleConfiguration, PRtcP
     MEMSET(&configuration, 0x00, SIZEOF(RtcConfiguration));
 
     // Set this to custom callback to enable filtering of interfaces
+    // 初始化网卡过滤接口
     configuration.kvsRtcConfiguration.iceSetInterfaceFilterFunc = NULL;
 
     // Set the ICE mode explicitly
+    // p2p 或 turn
     configuration.iceTransportPolicy = ICE_TRANSPORT_POLICY_ALL;
 
     // Set the  STUN server
+    // 设置stun服务器
     SNPRINTF(configuration.iceServers[0].urls, MAX_ICE_CONFIG_URI_LEN, KINESIS_VIDEO_STUN_URL, pSampleConfiguration->channelInfo.pRegion);
 
+    // 使用Turn
     if (pSampleConfiguration->useTurn) {
         // Set the URIs from the configuration
         CHK_STATUS(signalingClientGetIceConfigInfoCount(pSampleConfiguration->signalingClientHandle, &iceConfigCount));
@@ -379,6 +429,7 @@ STATUS initializePeerConnection(PSampleConfiguration pSampleConfiguration, PRtcP
                  * It's recommended to not pass too many TURN iceServers to configuration because it will slow down ice gathering in non-trickle mode.
                  */
 
+                // 设置turn 服务器 uri 凭证 用户名
                 STRNCPY(configuration.iceServers[uriCount + 1].urls, pIceConfigInfo->uris[j], MAX_ICE_CONFIG_URI_LEN);
                 STRNCPY(configuration.iceServers[uriCount + 1].credential, pIceConfigInfo->password, MAX_ICE_CONFIG_CREDENTIAL_LEN);
                 STRNCPY(configuration.iceServers[uriCount + 1].username, pIceConfigInfo->userName, MAX_ICE_CONFIG_USER_NAME_LEN);
@@ -399,11 +450,13 @@ STATUS initializePeerConnection(PSampleConfiguration pSampleConfiguration, PRtcP
         retStatus = STATUS_SUCCESS;
     } else {
         // Use the pre-generated cert and get rid of it to not reuse again
+        // 使用预先生成的证书
         pRtcCertificate = (PRtcCertificate) data;
         configuration.certificates[0] = *pRtcCertificate;
     }
 
     curTime = GETTIME();
+    // 创建PeerConnection
     CHK_STATUS(createPeerConnection(&configuration, ppRtcPeerConnection));
     DLOGD("time taken to create peer connection %" PRIu64 " ms", (GETTIME() - curTime) / HUNDREDS_OF_NANOS_IN_A_MILLISECOND);
 
@@ -412,6 +465,7 @@ CleanUp:
     CHK_LOG_ERR(retStatus);
 
     // Free the certificate which can be NULL as we no longer need it and won't reuse
+    // 回收证书资源
     freeRtcCertificate(pRtcCertificate);
 
     LEAVES();
@@ -419,6 +473,7 @@ CleanUp:
 }
 
 // Return ICE server stats for a specific streaming session
+// 收集ICE Server统计信息（打印日志）
 STATUS gatherIceServerStats(PSampleStreamingSession pSampleStreamingSession)
 {
     ENTERS();
@@ -442,6 +497,7 @@ CleanUp:
     return retStatus;
 }
 
+// 创建SampleStreamingSession
 STATUS createSampleStreamingSession(PSampleConfiguration pSampleConfiguration, PCHAR peerId, BOOL isMaster,
                                     PSampleStreamingSession* ppSampleStreamingSession)
 {
@@ -457,12 +513,16 @@ STATUS createSampleStreamingSession(PSampleConfiguration pSampleConfiguration, P
     CHK(pSampleConfiguration != NULL && ppSampleStreamingSession != NULL, STATUS_NULL_ARG);
     CHK((isMaster && peerId != NULL) || !isMaster, STATUS_INVALID_ARG);
 
+    // 分配内存
     pSampleStreamingSession = (PSampleStreamingSession) MEMCALLOC(1, SIZEOF(SampleStreamingSession));
     CHK(pSampleStreamingSession != NULL, STATUS_NOT_ENOUGH_MEMORY);
 
+    // master
     if (isMaster) {
         STRCPY(pSampleStreamingSession->peerId, peerId);
-    } else {
+    }
+    // viewer
+    else {
         STRCPY(pSampleStreamingSession->peerId, SAMPLE_VIEWER_CLIENT_ID);
     }
     ATOMIC_STORE_BOOL(&pSampleStreamingSession->peerIdReceived, TRUE);
@@ -475,7 +535,9 @@ STATUS createSampleStreamingSession(PSampleConfiguration pSampleConfiguration, P
     ATOMIC_STORE_BOOL(&pSampleStreamingSession->terminateFlag, FALSE);
     ATOMIC_STORE_BOOL(&pSampleStreamingSession->candidateGatheringDone, FALSE);
 
+    // 初始化PeerConnection
     CHK_STATUS(initializePeerConnection(pSampleConfiguration, &pSampleStreamingSession->pPeerConnection));
+    // 设置回调
     CHK_STATUS(peerConnectionOnIceCandidate(pSampleStreamingSession->pPeerConnection, (UINT64) pSampleStreamingSession, onIceCandidateHandler));
     CHK_STATUS(
         peerConnectionOnConnectionStateChange(pSampleStreamingSession->pPeerConnection, (UINT64) pSampleStreamingSession, onConnectionStateChange));
@@ -485,10 +547,12 @@ STATUS createSampleStreamingSession(PSampleConfiguration pSampleConfiguration, P
     }
 
     // Declare that we support H264,Profile=42E01F,level-asymmetry-allowed=1,packetization-mode=1 and Opus
+    // 支持h264 opus
     CHK_STATUS(addSupportedCodec(pSampleStreamingSession->pPeerConnection, RTC_CODEC_H264_PROFILE_42E01F_LEVEL_ASYMMETRY_ALLOWED_PACKETIZATION_MODE));
     CHK_STATUS(addSupportedCodec(pSampleStreamingSession->pPeerConnection, RTC_CODEC_OPUS));
 
     // Add a SendRecv Transceiver of type video
+    // 增加视频收发器(h264)
     videoTrack.kind = MEDIA_STREAM_TRACK_KIND_VIDEO;
     videoTrack.codec = RTC_CODEC_H264_PROFILE_42E01F_LEVEL_ASYMMETRY_ALLOWED_PACKETIZATION_MODE;
     videoRtpTransceiverInit.direction = RTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV;
@@ -497,10 +561,12 @@ STATUS createSampleStreamingSession(PSampleConfiguration pSampleConfiguration, P
     CHK_STATUS(addTransceiver(pSampleStreamingSession->pPeerConnection, &videoTrack, &videoRtpTransceiverInit,
                               &pSampleStreamingSession->pVideoRtcRtpTransceiver));
 
+    // 收发器带宽估算
     CHK_STATUS(transceiverOnBandwidthEstimation(pSampleStreamingSession->pVideoRtcRtpTransceiver, (UINT64) pSampleStreamingSession,
                                                 sampleBandwidthEstimationHandler));
 
     // Add a SendRecv Transceiver of type audio
+    // 增加音频收发器(opus)
     audioTrack.kind = MEDIA_STREAM_TRACK_KIND_AUDIO;
     audioTrack.codec = RTC_CODEC_OPUS;
     audioRtpTransceiverInit.direction = RTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV;
@@ -509,6 +575,7 @@ STATUS createSampleStreamingSession(PSampleConfiguration pSampleConfiguration, P
     CHK_STATUS(addTransceiver(pSampleStreamingSession->pPeerConnection, &audioTrack, &audioRtpTransceiverInit,
                               &pSampleStreamingSession->pAudioRtcRtpTransceiver));
 
+    // 带宽估算
     CHK_STATUS(transceiverOnBandwidthEstimation(pSampleStreamingSession->pAudioRtcRtpTransceiver, (UINT64) pSampleStreamingSession,
                                                 sampleBandwidthEstimationHandler));
     // twcc bandwidth estimation
@@ -530,6 +597,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收SampleStreamingSession资源
 STATUS freeSampleStreamingSession(PSampleStreamingSession* ppSampleStreamingSession)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -543,12 +611,14 @@ STATUS freeSampleStreamingSession(PSampleStreamingSession* ppSampleStreamingSess
 
     DLOGD("Freeing streaming session with peer id: %s ", pSampleStreamingSession->peerId);
 
+    // 设置终止标志
     ATOMIC_STORE_BOOL(&pSampleStreamingSession->terminateFlag, TRUE);
 
     if (pSampleStreamingSession->shutdownCallback != NULL) {
         pSampleStreamingSession->shutdownCallback(pSampleStreamingSession->shutdownCallbackCustomData, pSampleStreamingSession);
     }
 
+    // 回收音视频接受线程资源
     if (IS_VALID_TID_VALUE(pSampleStreamingSession->receiveAudioVideoSenderTid)) {
         THREAD_JOIN(pSampleStreamingSession->receiveAudioVideoSenderTid, NULL);
     }
@@ -556,6 +626,7 @@ STATUS freeSampleStreamingSession(PSampleStreamingSession* ppSampleStreamingSess
     // De-initialize the session stats timer if there are no active sessions
     // NOTE: we need to perform this under the lock which might be acquired by
     // the running thread but it's OK as it's re-entrant
+    // 加锁
     MUTEX_LOCK(pSampleConfiguration->sampleConfigurationObjLock);
     if (pSampleConfiguration->iceCandidatePairStatsTimerId != MAX_UINT32 && pSampleConfiguration->streamingSessionCount == 0 &&
         pSampleConfiguration->iceCandidatePairStatsTimerId != MAX_UINT32 && IS_VALID_TIMER_QUEUE_HANDLE(pSampleConfiguration->timerQueueHandle)) {
@@ -563,9 +634,13 @@ STATUS freeSampleStreamingSession(PSampleStreamingSession* ppSampleStreamingSess
                                           (UINT64) pSampleConfiguration));
         pSampleConfiguration->iceCandidatePairStatsTimerId = MAX_UINT32;
     }
+    // 解锁
     MUTEX_UNLOCK(pSampleConfiguration->sampleConfigurationObjLock);
 
+    // 关闭PeerConnection
     CHK_LOG_ERR(closePeerConnection(pSampleStreamingSession->pPeerConnection));
+    // 回收PeerConnection 资源
+    // 线程不安全
     CHK_LOG_ERR(freePeerConnection(&pSampleStreamingSession->pPeerConnection));
     SAFE_MEMFREE(pSampleStreamingSession);
 
@@ -576,6 +651,7 @@ CleanUp:
     return retStatus;
 }
 
+// 设置StreamingSession shutdown 回调
 STATUS streamingSessionOnShutdown(PSampleStreamingSession pSampleStreamingSession, UINT64 customData,
                                   StreamSessionShutdownCallback streamSessionShutdownCallback)
 {
@@ -583,6 +659,7 @@ STATUS streamingSessionOnShutdown(PSampleStreamingSession pSampleStreamingSessio
 
     CHK(pSampleStreamingSession != NULL && streamSessionShutdownCallback != NULL, STATUS_NULL_ARG);
 
+    // 设置回调函数、数据
     pSampleStreamingSession->shutdownCallbackCustomData = customData;
     pSampleStreamingSession->shutdownCallback = streamSessionShutdownCallback;
 
@@ -591,6 +668,7 @@ CleanUp:
     return retStatus;
 }
 
+// SampleFrame处理器
 VOID sampleFrameHandler(UINT64 customData, PFrame pFrame)
 {
     UNUSED_PARAM(customData);
@@ -603,12 +681,14 @@ VOID sampleFrameHandler(UINT64 customData, PFrame pFrame)
     }
 }
 
+// 单宽估算处理器
 VOID sampleBandwidthEstimationHandler(UINT64 customData, DOUBLE maximumBitrate)
 {
     UNUSED_PARAM(customData);
     DLOGV("received bitrate suggestion: %f", maximumBitrate);
 }
 
+// 发送者带宽估算处理器
 VOID sampleSenderBandwidthEstimationHandler(UINT64 customData, UINT32 txBytes, UINT32 rxBytes, UINT32 txPacketsCnt, UINT32 rxPacketsCnt,
                                             UINT64 duration)
 {
@@ -619,10 +699,13 @@ VOID sampleSenderBandwidthEstimationHandler(UINT64 customData, UINT32 txBytes, U
     UINT32 lostPacketsCnt = txPacketsCnt - rxPacketsCnt;
     UINT32 percentLost = lostPacketsCnt * 100 / txPacketsCnt;
     UINT32 bitrate = 1024;
+    // 丢包小于2%, 增加2% bitrate
     if (percentLost < 2) {
         // increase encoder bitrate by 2 percent
         bitrate *= 1.02f;
-    } else if (percentLost > 5) {
+    }
+    // 丢包大于5%，降低percent bitrate
+    else if (percentLost > 5) {
         // decrease encoder bitrate by packet loss percent
         bitrate *= (1.0f - percentLost / 100.0f);
     }
@@ -632,13 +715,16 @@ VOID sampleSenderBandwidthEstimationHandler(UINT64 customData, UINT32 txBytes, U
           txBytes, txPacketsCnt, rxBytes, rxPacketsCnt, duration / 10000ULL);
 }
 
+// 处理远程Candidate
 STATUS handleRemoteCandidate(PSampleStreamingSession pSampleStreamingSession, PSignalingMessage pSignalingMessage)
 {
     STATUS retStatus = STATUS_SUCCESS;
     RtcIceCandidateInit iceCandidate;
     CHK(pSampleStreamingSession != NULL && pSignalingMessage != NULL, STATUS_NULL_ARG);
 
+    // 反序列化RtcIceCandidate
     CHK_STATUS(deserializeRtcIceCandidateInit(pSignalingMessage->payload, pSignalingMessage->payloadLen, &iceCandidate));
+    // 增加IceCandidate
     CHK_STATUS(addIceCandidate(pSampleStreamingSession->pPeerConnection, iceCandidate.candidate));
 
 CleanUp:
@@ -647,6 +733,7 @@ CleanUp:
     return retStatus;
 }
 
+// 扫描.pem文件
 STATUS traverseDirectoryPEMFileScan(UINT64 customData, DIR_ENTRY_TYPES entryType, PCHAR fullPath, PCHAR fileName)
 {
     UNUSED_PARAM(entryType);
@@ -665,6 +752,7 @@ STATUS traverseDirectoryPEMFileScan(UINT64 customData, DIR_ENTRY_TYPES entryType
     return STATUS_SUCCESS;
 }
 
+// 查找SSL Cert
 STATUS lookForSslCert(PSampleConfiguration* ppSampleConfiguration)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -673,9 +761,11 @@ STATUS lookForSslCert(PSampleConfiguration* ppSampleConfiguration)
     PSampleConfiguration pSampleConfiguration = *ppSampleConfiguration;
 
     MEMSET(certName, 0x0, ARRAY_SIZE(certName));
+    // 获取证书路径(环境变量)
     pSampleConfiguration->pCaCertPath = getenv(CACERT_PATH_ENV_VAR);
 
     // if ca cert path is not set from the environment, try to use the one that cmake detected
+    // 如果环境中没有设置ca证书路径，请尝试使用cmake检测到的路径。
     if (pSampleConfiguration->pCaCertPath == NULL) {
         CHK_ERR(STRNLEN(DEFAULT_KVS_CACERT_PATH, MAX_PATH_LEN) > 0, STATUS_INVALID_OPERATION, "No ca cert path given (error:%s)", strerror(errno));
         pSampleConfiguration->pCaCertPath = DEFAULT_KVS_CACERT_PATH;
@@ -704,6 +794,7 @@ CleanUp:
     return retStatus;
 }
 
+// 创建SampleConfiguration
 STATUS createSampleConfiguration(PCHAR channelName, SIGNALING_CHANNEL_ROLE_TYPE roleType, BOOL trickleIce, BOOL useTurn,
                                  PSampleConfiguration* ppSampleConfiguration)
 {
@@ -714,6 +805,7 @@ STATUS createSampleConfiguration(PCHAR channelName, SIGNALING_CHANNEL_ROLE_TYPE 
 
     CHK(ppSampleConfiguration != NULL, STATUS_NULL_ARG);
 
+    // 分配内存
     CHK(NULL != (pSampleConfiguration = (PSampleConfiguration) MEMCALLOC(1, SIZEOF(SampleConfiguration))), STATUS_NOT_ENOUGH_MEMORY);
 
 #ifdef IOT_CORE_ENABLE_CREDENTIALS
@@ -724,22 +816,28 @@ STATUS createSampleConfiguration(PCHAR channelName, SIGNALING_CHANNEL_ROLE_TYPE 
     CHK_ERR((pIotCorePrivateKey = getenv(IOT_CORE_PRIVATE_KEY)) != NULL, STATUS_INVALID_OPERATION, "AWS_IOT_CORE_PRIVATE_KEY must be set");
     CHK_ERR((pIotCoreRoleAlias = getenv(IOT_CORE_ROLE_ALIAS)) != NULL, STATUS_INVALID_OPERATION, "AWS_IOT_CORE_ROLE_ALIAS must be set");
 #else
+    // 获取accessKey
     CHK_ERR((pAccessKey = getenv(ACCESS_KEY_ENV_VAR)) != NULL, STATUS_INVALID_OPERATION, "AWS_ACCESS_KEY_ID must be set");
+    // 获取secretKey
     CHK_ERR((pSecretKey = getenv(SECRET_KEY_ENV_VAR)) != NULL, STATUS_INVALID_OPERATION, "AWS_SECRET_ACCESS_KEY must be set");
 #endif
-
+    // 获取session token
     pSessionToken = getenv(SESSION_TOKEN_ENV_VAR);
+    // 日志文件
     pSampleConfiguration->enableFileLogging = FALSE;
     if (NULL != getenv(ENABLE_FILE_LOGGING)) {
         pSampleConfiguration->enableFileLogging = TRUE;
     }
+    // region设置
     if ((pSampleConfiguration->channelInfo.pRegion = getenv(DEFAULT_REGION_ENV_VAR)) == NULL) {
         pSampleConfiguration->channelInfo.pRegion = DEFAULT_AWS_REGION;
     }
 
+    // 查找SSL cert
     CHK_STATUS(lookForSslCert(&pSampleConfiguration));
 
     // Set the logger log level
+    // 设置日志level
     if (NULL == (pLogLevel = getenv(DEBUG_LOG_LEVEL_ENV_VAR)) || STATUS_SUCCESS != STRTOUI32(pLogLevel, NULL, 10, &logLevel) ||
         logLevel < LOG_LEVEL_VERBOSE || logLevel > LOG_LEVEL_SILENT) {
         logLevel = LOG_LEVEL_WARN;
@@ -751,6 +849,8 @@ STATUS createSampleConfiguration(PCHAR channelName, SIGNALING_CHANNEL_ROLE_TYPE 
     CHK_STATUS(createLwsIotCredentialProvider(pIotCoreCredentialEndPoint, pIotCoreCert, pIotCorePrivateKey, pSampleConfiguration->pCaCertPath,
                                               pIotCoreRoleAlias, channelName, &pSampleConfiguration->pCredentialProvider));
 #else
+    // Creates a Static AWS credential provider object
+    // 创建一个静态的AWS凭证提供者对象
     CHK_STATUS(
         createStaticCredentialProvider(pAccessKey, 0, pSecretKey, 0, pSessionToken, 0, MAX_UINT64, &pSampleConfiguration->pCredentialProvider));
 #endif
@@ -799,6 +899,7 @@ STATUS createSampleConfiguration(PCHAR channelName, SIGNALING_CHANNEL_ROLE_TYPE 
     ATOMIC_STORE_BOOL(&pSampleConfiguration->recreateSignalingClient, FALSE);
     ATOMIC_STORE_BOOL(&pSampleConfiguration->connected, FALSE);
 
+    // 创建定时器队列
     CHK_STATUS(timerQueueCreate(&pSampleConfiguration->timerQueueHandle));
 
     CHK_STATUS(stackQueueCreate(&pSampleConfiguration->pregeneratedCertificates));
@@ -829,6 +930,7 @@ CleanUp:
     return retStatus;
 }
 
+// 打印日志(信令客户端统计信息)
 STATUS logSignalingClientStats(PSignalingClientMetrics pSignalingClientMetrics)
 {
     ENTERS();
@@ -852,6 +954,7 @@ CleanUp:
     return retStatus;
 }
 
+// 获取IceCandidatePair统计信息回调
 STATUS getIceCandidatePairStatsCallback(UINT32 timerId, UINT64 currentTime, UINT64 customData)
 {
     UNUSED_PARAM(timerId);
@@ -952,6 +1055,7 @@ CleanUp:
     return retStatus;
 }
 
+// 预生成证书定时器回调
 STATUS pregenerateCertTimerCallback(UINT32 timerId, UINT64 currentTime, UINT64 customData)
 {
     UNUSED_PARAM(timerId);
@@ -964,6 +1068,7 @@ STATUS pregenerateCertTimerCallback(UINT32 timerId, UINT64 currentTime, UINT64 c
 
     CHK_WARN(pSampleConfiguration != NULL, STATUS_NULL_ARG, "[KVS Master] pregenerateCertTimerCallback(): Passed argument is NULL");
 
+    // 加锁
     MUTEX_LOCK(pSampleConfiguration->sampleConfigurationObjLock);
     locked = TRUE;
 
@@ -972,6 +1077,7 @@ STATUS pregenerateCertTimerCallback(UINT32 timerId, UINT64 currentTime, UINT64 c
     CHK(certCount != MAX_RTCCONFIGURATION_CERTIFICATES, retStatus);
 
     // Generate the certificate with the keypair
+    // 用密钥对生成证书
     CHK_STATUS(createRtcCertificate(&pRtcCertificate));
 
     // Add to the stack queue
@@ -982,6 +1088,7 @@ STATUS pregenerateCertTimerCallback(UINT32 timerId, UINT64 currentTime, UINT64 c
     // Reset it so it won't be freed on exit
     pRtcCertificate = NULL;
 
+    // 解锁
     MUTEX_UNLOCK(pSampleConfiguration->sampleConfigurationObjLock);
     locked = FALSE;
 
@@ -991,6 +1098,7 @@ CleanUp:
         freeRtcCertificate(pRtcCertificate);
     }
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSampleConfiguration->sampleConfigurationObjLock);
     }
@@ -998,6 +1106,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收SampleConfiguration
 STATUS freeSampleConfiguration(PSampleConfiguration* ppSampleConfiguration)
 {
     ENTERS();
@@ -1015,6 +1124,7 @@ STATUS freeSampleConfiguration(PSampleConfiguration* ppSampleConfiguration)
 
     if (IS_VALID_TIMER_QUEUE_HANDLE(pSampleConfiguration->timerQueueHandle)) {
         if (pSampleConfiguration->iceCandidatePairStatsTimerId != MAX_UINT32) {
+            // 取消定时器队列
             retStatus = timerQueueCancelTimer(pSampleConfiguration->timerQueueHandle, pSampleConfiguration->iceCandidatePairStatsTimerId,
                                               (UINT64) pSampleConfiguration);
             if (STATUS_FAILED(retStatus)) {
@@ -1024,6 +1134,7 @@ STATUS freeSampleConfiguration(PSampleConfiguration* ppSampleConfiguration)
         }
 
         if (pSampleConfiguration->pregenerateCertTimerId != MAX_UINT32) {
+            // 取消定时器队列
             retStatus = timerQueueCancelTimer(pSampleConfiguration->timerQueueHandle, pSampleConfiguration->pregenerateCertTimerId,
                                               (UINT64) pSampleConfiguration);
             if (STATUS_FAILED(retStatus)) {
@@ -1031,7 +1142,7 @@ STATUS freeSampleConfiguration(PSampleConfiguration* ppSampleConfiguration)
             }
             pSampleConfiguration->pregenerateCertTimerId = MAX_UINT32;
         }
-
+        // 回收定时器队列资源
         timerQueueFree(&pSampleConfiguration->timerQueueHandle);
     }
 
@@ -1053,6 +1164,7 @@ STATUS freeSampleConfiguration(PSampleConfiguration* ppSampleConfiguration)
     hashTableFree(pSampleConfiguration->pRtcPeerConnectionForRemoteClient);
 
     if (IS_VALID_MUTEX_VALUE(pSampleConfiguration->sampleConfigurationObjLock)) {
+        // 加锁
         MUTEX_LOCK(pSampleConfiguration->sampleConfigurationObjLock);
         locked = TRUE;
     }
@@ -1062,8 +1174,10 @@ STATUS freeSampleConfiguration(PSampleConfiguration* ppSampleConfiguration)
         if (STATUS_FAILED(retStatus)) {
             DLOGW("Failed to ICE Server Stats for streaming session %d: %08x", i, retStatus);
         }
+        // 线程不安全
         freeSampleStreamingSession(&pSampleConfiguration->sampleStreamingSessionList[i]);
     }
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSampleConfiguration->sampleConfigurationObjLock);
     }
@@ -1074,10 +1188,13 @@ STATUS freeSampleConfiguration(PSampleConfiguration* ppSampleConfiguration)
 
     if (IS_VALID_CVAR_VALUE(pSampleConfiguration->cvar) && IS_VALID_MUTEX_VALUE(pSampleConfiguration->sampleConfigurationObjLock)) {
         CVAR_BROADCAST(pSampleConfiguration->cvar);
+        // 加锁
         MUTEX_LOCK(pSampleConfiguration->sampleConfigurationObjLock);
+        // 解锁
         MUTEX_UNLOCK(pSampleConfiguration->sampleConfigurationObjLock);
     }
 
+    // 回收锁资源
     if (IS_VALID_MUTEX_VALUE(pSampleConfiguration->sampleConfigurationObjLock)) {
         MUTEX_FREE(pSampleConfiguration->sampleConfigurationObjLock);
     }
@@ -1097,6 +1214,7 @@ STATUS freeSampleConfiguration(PSampleConfiguration* ppSampleConfiguration)
 #ifdef IOT_CORE_ENABLE_CREDENTIALS
     freeIotCredentialProvider(&pSampleConfiguration->pCredentialProvider);
 #else
+    // 回收凭证提供者资源
     freeStaticCredentialProvider(&pSampleConfiguration->pCredentialProvider);
 #endif
 
@@ -1121,6 +1239,7 @@ CleanUp:
     return retStatus;
 }
 
+// 清理未使用的streamingSession
 STATUS sessionCleanupWait(PSampleConfiguration pSampleConfiguration)
 {
     ENTERS();
@@ -1134,17 +1253,21 @@ STATUS sessionCleanupWait(PSampleConfiguration pSampleConfiguration)
 
     while (!ATOMIC_LOAD_BOOL(&pSampleConfiguration->interrupted)) {
         // Keep the main set of operations interlocked until cvar wait which would atomically unlock
+        // 加锁
         MUTEX_LOCK(pSampleConfiguration->sampleConfigurationObjLock);
         locked = TRUE;
 
         // scan and cleanup terminated streaming session
         for (i = 0; i < pSampleConfiguration->streamingSessionCount; ++i) {
+            // streamingSession终止
             if (ATOMIC_LOAD_BOOL(&pSampleConfiguration->sampleStreamingSessionList[i]->terminateFlag)) {
                 pSampleStreamingSession = pSampleConfiguration->sampleStreamingSessionList[i];
 
+                // 加锁
                 MUTEX_LOCK(pSampleConfiguration->streamingSessionListReadLock);
 
                 // swap with last element and decrement count
+                // 将最后一个session移至该位置
                 pSampleConfiguration->streamingSessionCount--;
                 pSampleConfiguration->sampleStreamingSessionList[i] =
                     pSampleConfiguration->sampleStreamingSessionList[pSampleConfiguration->streamingSessionCount];
@@ -1156,19 +1279,24 @@ STATUS sessionCleanupWait(PSampleConfiguration pSampleConfiguration)
                     CHK_STATUS(hashTableRemove(pSampleConfiguration->pRtcPeerConnectionForRemoteClient, clientIdHash));
                 }
 
+                // 解锁
                 MUTEX_UNLOCK(pSampleConfiguration->streamingSessionListReadLock);
 
+                // 线程不安全
                 CHK_STATUS(freeSampleStreamingSession(&pSampleStreamingSession));
             }
         }
 
         // Check if we need to re-create the signaling client on-the-fly
+        // 检查是否立即重新创建信令客户端
         if (ATOMIC_LOAD_BOOL(&pSampleConfiguration->recreateSignalingClient)) {
             retStatus = signalingClientFetchSync(pSampleConfiguration->signalingClientHandle);
             if (STATUS_SUCCEEDED(retStatus)) {
                 // Re-set the variable again
                 ATOMIC_STORE_BOOL(&pSampleConfiguration->recreateSignalingClient, FALSE);
-            } else if (signalingCallFailed(retStatus)) {
+            }
+            // 重新创建
+            else if (signalingCallFailed(retStatus)) {
                 printf("[KVS Common] recreating Signaling Client\n");
                 freeSignalingClient(&pSampleConfiguration->signalingClientHandle);
                 createSignalingClientSync(&pSampleConfiguration->clientInfo, &pSampleConfiguration->channelInfo,
@@ -1178,8 +1306,10 @@ STATUS sessionCleanupWait(PSampleConfiguration pSampleConfiguration)
         }
 
         // Check the signaling client state and connect if needed
+        // 检查信令客户端的状态，如果需要的话进行连接
         if (IS_VALID_SIGNALING_CLIENT_HANDLE(pSampleConfiguration->signalingClientHandle)) {
             CHK_STATUS(signalingClientGetCurrentState(pSampleConfiguration->signalingClientHandle, &signalingClientState));
+            // 已就绪
             if (signalingClientState == SIGNALING_CLIENT_STATE_READY) {
                 UNUSED_PARAM(signalingClientConnectSync(pSampleConfiguration->signalingClientHandle));
             }
@@ -1190,6 +1320,7 @@ STATUS sessionCleanupWait(PSampleConfiguration pSampleConfiguration)
 
         // periodically wake up and clean up terminated streaming session
         CVAR_WAIT(pSampleConfiguration->cvar, pSampleConfiguration->sampleConfigurationObjLock, SAMPLE_SESSION_CLEANUP_WAIT_PERIOD);
+        // 解锁
         MUTEX_UNLOCK(pSampleConfiguration->sampleConfigurationObjLock);
         locked = FALSE;
     }
@@ -1198,6 +1329,7 @@ CleanUp:
 
     CHK_LOG_ERR(retStatus);
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSampleConfiguration->sampleConfigurationObjLock);
     }
@@ -1206,6 +1338,7 @@ CleanUp:
     return retStatus;
 }
 
+// 处理等待的IceCandidate
 STATUS submitPendingIceCandidate(PPendingMessageQueue pPendingMessageQueue, PSampleStreamingSession pSampleStreamingSession)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1217,18 +1350,21 @@ STATUS submitPendingIceCandidate(PPendingMessageQueue pPendingMessageQueue, PSam
 
     do {
         CHK_STATUS(stackQueueIsEmpty(pPendingMessageQueue->messageQueue, &noPendingSignalingMessageForClient));
+        // 非空
         if (!noPendingSignalingMessageForClient) {
             hashValue = 0;
             CHK_STATUS(stackQueueDequeue(pPendingMessageQueue->messageQueue, &hashValue));
             pReceivedSignalingMessage = (PReceivedSignalingMessage) hashValue;
             CHK(pReceivedSignalingMessage != NULL, STATUS_INTERNAL_ERROR);
             if (pReceivedSignalingMessage->signalingMessage.messageType == SIGNALING_MESSAGE_TYPE_ICE_CANDIDATE) {
+                // 处理远程Candidate
                 CHK_STATUS(handleRemoteCandidate(pSampleStreamingSession, &pReceivedSignalingMessage->signalingMessage));
             }
             SAFE_MEMFREE(pReceivedSignalingMessage);
         }
     } while (!noPendingSignalingMessageForClient);
 
+    // 回收消息队列资源
     CHK_STATUS(freeMessageQueue(pPendingMessageQueue));
 
 CleanUp:
@@ -1238,6 +1374,7 @@ CleanUp:
     return retStatus;
 }
 
+// 信令消息处理
 STATUS signalingMessageReceived(UINT64 customData, PReceivedSignalingMessage pReceivedSignalingMessage)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1251,6 +1388,7 @@ STATUS signalingMessageReceived(UINT64 customData, PReceivedSignalingMessage pRe
 
     CHK(pSampleConfiguration != NULL, STATUS_NULL_ARG);
 
+    // 加锁
     MUTEX_LOCK(pSampleConfiguration->sampleConfigurationObjLock);
     locked = TRUE;
 
@@ -1263,6 +1401,7 @@ STATUS signalingMessageReceived(UINT64 customData, PReceivedSignalingMessage pRe
     }
 
     switch (pReceivedSignalingMessage->signalingMessage.messageType) {
+        // 收到offer
         case SIGNALING_MESSAGE_TYPE_OFFER:
             // Check if we already have an ongoing master session with the same peer
             CHK_ERR(!peerConnectionFound, STATUS_INVALID_OPERATION, "Peer connection %s is in progress",
@@ -1285,13 +1424,17 @@ STATUS signalingMessageReceived(UINT64 customData, PReceivedSignalingMessage pRe
 
                 CHK(FALSE, retStatus);
             }
+            // 创建SampleStreamingSession
             CHK_STATUS(createSampleStreamingSession(pSampleConfiguration, pReceivedSignalingMessage->signalingMessage.peerClientId, TRUE,
                                                     &pSampleStreamingSession));
             pSampleStreamingSession->offerReceiveTime = GETTIME();
+            // 加锁
             MUTEX_LOCK(pSampleConfiguration->streamingSessionListReadLock);
             pSampleConfiguration->sampleStreamingSessionList[pSampleConfiguration->streamingSessionCount++] = pSampleStreamingSession;
+            // 解锁
             MUTEX_UNLOCK(pSampleConfiguration->streamingSessionListReadLock);
 
+            // 处理offer
             CHK_STATUS(handleOffer(pSampleConfiguration, pSampleStreamingSession, &pReceivedSignalingMessage->signalingMessage));
             CHK_STATUS(hashTablePut(pSampleConfiguration->pRtcPeerConnectionForRemoteClient, clientIdHash, (UINT64) pSampleStreamingSession));
 
@@ -1308,6 +1451,7 @@ STATUS signalingMessageReceived(UINT64 customData, PReceivedSignalingMessage pRe
             startStats = pSampleConfiguration->iceCandidatePairStatsTimerId == MAX_UINT32;
             break;
 
+        // 收到answer
         case SIGNALING_MESSAGE_TYPE_ANSWER:
             /*
              * for viewer, pSampleStreamingSession should've already been created. insert the client id and
@@ -1330,6 +1474,7 @@ STATUS signalingMessageReceived(UINT64 customData, PReceivedSignalingMessage pRe
             }
             break;
 
+        // 收到Ice Candidate
         case SIGNALING_MESSAGE_TYPE_ICE_CANDIDATE:
             /*
              * if peer connection hasn't been created, create an queue to store the ice candidate message. Otherwise
@@ -1362,6 +1507,7 @@ STATUS signalingMessageReceived(UINT64 customData, PReceivedSignalingMessage pRe
             break;
     }
 
+    // 解锁
     MUTEX_UNLOCK(pSampleConfiguration->sampleConfigurationObjLock);
     locked = FALSE;
 
@@ -1380,10 +1526,12 @@ STATUS signalingMessageReceived(UINT64 customData, PReceivedSignalingMessage pRe
 CleanUp:
 
     SAFE_MEMFREE(pReceivedSignalingMessageCopy);
+    // 回收消息队列
     if (pPendingMessageQueue != NULL) {
         freeMessageQueue(pPendingMessageQueue);
     }
 
+    // 解锁
     if (locked) {
         MUTEX_UNLOCK(pSampleConfiguration->sampleConfigurationObjLock);
     }
@@ -1392,6 +1540,7 @@ CleanUp:
     return retStatus;
 }
 
+// 创建消息队列
 STATUS createMessageQueue(UINT64 hashValue, PPendingMessageQueue* ppPendingMessageQueue)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1418,6 +1567,7 @@ CleanUp:
     return retStatus;
 }
 
+// 回收消息队列
 STATUS freeMessageQueue(PPendingMessageQueue pPendingMessageQueue)
 {
     STATUS retStatus = STATUS_SUCCESS;
@@ -1426,7 +1576,9 @@ STATUS freeMessageQueue(PPendingMessageQueue pPendingMessageQueue)
     CHK(pPendingMessageQueue != NULL, retStatus);
 
     if (pPendingMessageQueue->messageQueue != NULL) {
+        // 清理队列
         stackQueueClear(pPendingMessageQueue->messageQueue, TRUE);
+        // 回收队列资源
         stackQueueFree(pPendingMessageQueue->messageQueue);
     }
 
@@ -1470,6 +1622,7 @@ CleanUp:
     return retStatus;
 }
 
+// 移除失效消息队列
 STATUS removeExpiredMessageQueues(PStackQueue pPendingQueue)
 {
     STATUS retStatus = STATUS_SUCCESS;
